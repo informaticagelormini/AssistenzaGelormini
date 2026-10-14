@@ -17,7 +17,8 @@ che ogni client riceve comunque dal server.
 
 Ogni modifica sul ramo `main` avvia GitHub Actions (`build-windows.yml`, Windows x64, circa 45 minuti). Il workflow
 controlla che nel programma ci siano il server e la chiave giusti e che NON ci siano quelli di rustdesk.com, poi
-pubblica eseguibile, MSI e `SHA256SUMS.txt` come Release del repository.
+pubblica come Release SOLO cio' che ha verificato: l'MSI (controllato anche dall'interno), `librustdesk.dll.sha256` e
+`SHA256SUMS.txt`.
 
 ## Provenienza e licenze
 
