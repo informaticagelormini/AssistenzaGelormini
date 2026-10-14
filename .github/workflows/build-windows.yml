@@ -578,17 +578,13 @@ jobs:
           cp ./res/icon.ico ./rustdesk/data/flutter_assets/assets/icon.ico
 
       - name: logo stuff
-        if: ${{ env.logolink_url != 'false' }}
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 5
-          max_attempts: 3
-          retry_wait_seconds: 15
-          shell: pwsh
-          continue_on_error: true
-          command: |
-            Copy-Item ./ga/risorse/logo.png ./rustdesk/data/flutter_assets/assets/logo.png
-            Copy-Item ./ga/risorse/logo_dark.png ./rustdesk/data/flutter_assets/assets/logo_dark.png
+        shell: bash
+        run: |
+          set -e
+          for f in logo.png logo_dark.png; do
+            cp "./ga/risorse/$f" "./rustdesk/data/flutter_assets/assets/$f"
+            cmp "./ga/risorse/$f" "./rustdesk/data/flutter_assets/assets/$f"
+          done
 
       - name: find Runner.res
         # Windows: find Runner.res (compiled from ./flutter/windows/runner/Runner.rc), copy to ./Runner.res
@@ -667,7 +663,6 @@ jobs:
           python preprocess.py --app-name "$myappname" --arp -d ../../rustdesk
           nuget restore msi.sln
           msbuild msi.sln -p:Configuration=Release -p:Platform=x64 /p:TargetVersion=Windows10
-          cp ./Package/bin/x64/Release/en-us/Package.msi ../../SignOutput/rustdesk-latest.msi
           mv ./Package/bin/x64/Release/en-us/Package.msi ../../SignOutput/rustdesk.msi
           sha256sum ../../SignOutput/rustdesk.msi
 
@@ -721,12 +716,36 @@ jobs:
           if grep -qaF "rs-ny.rustdesk.com" "$f"; then echo "server di rustdesk.com ANCORA presente"; exit 1; fi
           grep -caF "${{ env.apiServer }}" "$f" | grep -qv '^0$' || { echo "server API NON trovato in librustdesk.dll"; exit 1; }
           if grep -qaF "admin.rustdesk.com" "$f"; then echo "API di rustdesk.com ANCORA presente"; exit 1; fi
-          [ -s "./SignOutput/${{ env.filename }}.exe" ] || { echo "eseguibile assente"; exit 1; }
-          d=$(sha256sum "$f" | cut -d' ' -f1)
-          cd ./SignOutput && sha256sum *.exe *.msi > SHA256SUMS.txt
-          # NEO giro 1 (client): l'impronta del componente principale, da confrontare con quello INSTALLATO sui PC
-          echo "$d  librustdesk.dll (dentro il pacchetto: si confronta con C:/Program Files/${{ env.appname }}/librustdesk.dll)" >> SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          for a in logo.png logo_dark.png; do cmp "./ga/risorse/$a" "./rustdesk/data/flutter_assets/assets/$a" || { echo "$a non e' quello del repository"; exit 1; }; done
+          n=$(ls ./SignOutput/*.msi | wc -l); [ "$n" = 1 ] || { echo "attesi 1 MSI, trovati $n"; exit 1; }
+          [ -s "./SignOutput/${{ env.filename }}.msi" ] || { echo "MSI assente"; exit 1; }
+          sha256sum "$f" | sed 's#  .*#  librustdesk.dll#' > ./SignOutput/librustdesk.dll.sha256
+          cat ./SignOutput/librustdesk.dll.sha256
+
+      - name: Verifica DENTRO l'MSI pubblicato
+        shell: pwsh
+        run: |
+          $msi = (Resolve-Path "./SignOutput/${{ env.filename }}.msi").Path
+          $dir = Join-Path $env:RUNNER_TEMP "msi-estratto"
+          $p = Start-Process msiexec.exe -ArgumentList "/a `"$msi`" /qn TARGETDIR=`"$dir`"" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "estrazione MSI fallita: $($p.ExitCode)" }
+          $dll = @(Get-ChildItem -Path $dir -Recurse -Filter librustdesk.dll)
+          if ($dll.Count -ne 1) { throw "nell'MSI trovati $($dll.Count) librustdesk.dll invece di 1" }
+          $dentro = (Get-FileHash $dll[0].FullName -Algorithm SHA256).Hash.ToLower()
+          $atteso = ((Get-Content ./SignOutput/librustdesk.dll.sha256) -split '\s+')[0]
+          Write-Output "librustdesk.dll dentro l'MSI: $dentro ; verificata: $atteso"
+          if ($dentro -ne $atteso) { throw "la DLL dentro l'MSI NON e' quella verificata" }
+          foreach ($a in @("logo.png", "logo_dark.png")) {
+            $x = @(Get-ChildItem -Path $dir -Recurse -Filter $a | Where-Object { $_.FullName -like "*flutter_assets*assets*" })
+            if ($x.Count -ne 1) { throw "nell'MSI $a trovato $($x.Count) volte" }
+            if ((Get-FileHash $x[0].FullName).Hash -ne (Get-FileHash "./ga/risorse/$a").Hash) { throw "$a dentro l'MSI diverso dal repository" }
+          }
+          Write-Output "MSI verificato: DLL e loghi sono quelli controllati"
+
+      - name: Impronte
+        shell: bash
+        run: |
+          cd ./SignOutput && sha256sum "${{ env.filename }}.msi" librustdesk.dll.sha256 > SHA256SUMS.txt && cat SHA256SUMS.txt
 
       - name: Pubblica la Release
         shell: bash
@@ -735,7 +754,7 @@ jobs:
         run: |
           set -e
           tag="v${{ env.VERSION }}-ga${{ github.run_number }}"
-          gh release create "$tag" ./SignOutput/*.exe ./SignOutput/*.msi ./SignOutput/SHA256SUMS.txt \
+          gh release create "$tag" "./SignOutput/${{ env.filename }}.msi" ./SignOutput/librustdesk.dll.sha256 ./SignOutput/SHA256SUMS.txt \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" \
             --title "AssistenzaGelormini ${{ env.VERSION }} (compilazione ${{ github.run_number }})" \
             --notes "Client RustDesk ${{ env.VERSION }} personalizzato per Informatica Gelormini. Server ${{ env.server }}:${{ env.serverPort }}. Sorgente: rustdesk/rustdesk tag ${{ env.VERSION }} + questo repository (commit ${{ github.sha }}). Licenza AGPL-3.0."
