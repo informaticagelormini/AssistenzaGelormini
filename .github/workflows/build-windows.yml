@@ -123,7 +123,7 @@ jobs:
           if [ "${{ env.key }}" = "CHIAVE_PUBBLICA_DA_METTERE" ] || [ ${#key} -ne 44 ]; then echo "chiave pubblica non impostata"; exit 1; fi
 
       - name: Restore bridge files
-        uses: actions/download-artifact@master
+        uses: actions/download-artifact@v4
         with:
           name: bridge-artifact
           path: ./
@@ -375,6 +375,7 @@ jobs:
           flutter doctor -v
           flutter precache --windows
           Invoke-WebRequest -Uri https://github.com/rustdesk/engine/releases/download/main/windows-x64-release.zip -OutFile windows-x64-release.zip
+          if ((Get-FileHash windows-x64-release.zip -Algorithm SHA256).Hash -ne "EC8CABF36EE4FF24C8D98DE25B00E70781EB03876265AEE84D0FE554A110036E") { throw "engine Flutter con impronta diversa da quella fissata" }
           Expand-Archive -Path windows-x64-release.zip -DestinationPath windows-x64-release
           mv -Force windows-x64-release/*  C:/hostedtoolcache/windows/flutter/stable-${{ env.FLUTTER_VERSION }}-x64/bin/cache/artifacts/engine/windows-x64-release/
 
@@ -534,20 +535,19 @@ jobs:
  
           # Download usbmmidd_v2.zip and extract it to ./rustdesk
           Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
+          if ((Get-FileHash usbmmidd_v2.zip -Algorithm SHA256).Hash -ne "629B51E9944762BAE73948171C65D09A79595CF4C771A82EBC003FBBA5B24F51") { throw "usbmmidd_v2 con impronta diversa da quella fissata" }
           Expand-Archive usbmmidd_v2.zip -DestinationPath . -Force
           Remove-Item -Path usbmmidd_v2\Win32 -Recurse
           Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
           mv -Force .\usbmmidd_v2 ./rustdesk   
 
           # Download and install driver package
-          try {
-            Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile rustdesk_printer_driver_v4-1.4.zip
-            Expand-Archive rustdesk_printer_driver_v4-1.4.zip -DestinationPath .
-            mkdir ./rustdesk/drivers -ErrorAction SilentlyContinue
-            mv -Force .\rustdesk_printer_driver_v4-1.4 ./rustdesk/drivers/RustDeskPrinterDriver
-          } catch {
-            Write-Host "Warning: Printer driver download failed."
-          }
+          # (rdgen tollerava il fallimento; qui no: impronta fissata e coincidente col digest pubblicato da GitHub)
+          Invoke-WebRequest -Uri https://github.com/rustdesk/hbb_common/releases/download/driver/rustdesk_printer_driver_v4-1.4.zip -OutFile rustdesk_printer_driver_v4-1.4.zip
+          if ((Get-FileHash rustdesk_printer_driver_v4-1.4.zip -Algorithm SHA256).Hash -ne "C4CF4D3B48C4D9079B243EDC43BB1DB03B076282BC259C9F49883E9DB20FA8B5") { throw "driver stampante con impronta diversa da quella fissata" }
+          Expand-Archive rustdesk_printer_driver_v4-1.4.zip -DestinationPath .
+          mkdir ./rustdesk/drivers -ErrorAction SilentlyContinue
+          mv -Force .\rustdesk_printer_driver_v4-1.4 ./rustdesk/drivers/RustDeskPrinterDriver
 
           # Build and install open printer adapter
           if (Test-Path "./printer-adapter/Cargo.toml") {
@@ -603,7 +603,7 @@ jobs:
           fi
 
       - name: Download RustDeskTempTopMostWindow artifacts
-        uses: actions/download-artifact@master
+        uses: actions/download-artifact@v4
         if: env.UPLOAD_ARTIFACT == 'true'
         with:
           name: topmostwindow-artifacts
