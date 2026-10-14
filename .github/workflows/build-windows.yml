@@ -754,6 +754,7 @@ jobs:
           Write-Output "ProductName=$($vi.ProductName) CompanyName=$($vi.CompanyName) FileDescription=$($vi.FileDescription)"
           if ($vi.ProductName -ne "${{ env.appname }}") { throw "ProductName dell'eseguibile non e' ${{ env.appname }}" }
           if ($vi.CompanyName -ne "${{ env.compname }}") { throw "CompanyName dell'eseguibile non e' ${{ env.compname }}" }
+          if ((Get-FileHash $exe[0].FullName).Hash -ne (Get-FileHash "./rustdesk/${{ env.appname }}.exe").Hash) { throw "eseguibile dentro l'MSI diverso da quello verificato" }
           $so = @(Get-ChildItem -Path $dir -Recurse -Filter app.so)
           if ($so.Count -ne 1) { throw "nell'MSI app.so trovato $($so.Count) volte" }
           if ((Get-FileHash $so[0].FullName).Hash -ne (Get-FileHash ./rustdesk/data/app.so).Hash) { throw "app.so dentro l'MSI diverso da quello verificato" }
