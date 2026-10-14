@@ -40,7 +40,8 @@ RIQUADRO = r'''
 const String _gaSito = "https://www.informaticagelormini.com";
 const String _gaTelefono = "tel:+393392885800";
 const String _gaWhatsApp = "https://wa.me/393392885800";
-const String _gaMail = "mailto:info@informaticagelormini.com";
+// 14/10, tecnico: per ora la casella personale; poi una dedicata (assistenza@) quando il server di posta la crea
+const String _gaMail = "mailto:a.gelormini@informaticagelormini.com";
 const String _gaPrenota = "https://www.informaticagelormini.com/prenota/";
 
 Widget gaRiquadroGelormini(BuildContext context) {
