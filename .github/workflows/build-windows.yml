@@ -40,7 +40,8 @@ env:
   downloadLink: "https://www.informaticagelormini.com"
   server: "remote.ga-informatica.com"
   serverPort: "21216"
-  key: "CHIAVE_PUBBLICA_DA_METTERE"
+  # chiave PUBBLICA del server nuovo (/opt/rustdesk/data-2026/id_ed25519.pub, generata il 14/10/2026 13:15)
+  key: "FwpTqHoFEGwdidg9vyOY4MI3VihRtA9vagno+Uad0M0="
   # rubrica condivisa (decisione del tecnico 14/10): la console della VPS, raggiungibile SOLO via Tailscale (tailscale0)
   apiServer: "http://100.97.211.33:21114"
   iconlink_url: "locale"
