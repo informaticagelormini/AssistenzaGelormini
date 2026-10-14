@@ -40,6 +40,8 @@ RIQUADRO = r'''
 const String _gaSito = "https://www.informaticagelormini.com";
 const String _gaTelefono = "tel:+393392885800";
 const String _gaWhatsApp = "https://wa.me/393392885800";
+const String _gaMail = "mailto:info@informaticagelormini.com";
+const String _gaPrenota = "https://www.informaticagelormini.com/prenota/";
 
 Widget gaRiquadroGelormini(BuildContext context) {
   final scuro = Theme.of(context).brightness == Brightness.dark;
@@ -71,12 +73,17 @@ Widget gaRiquadroGelormini(BuildContext context) {
         Text("Informatica Gelormini",
             style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: testo)),
         const SizedBox(height: 2),
-        Text("Un solo referente, sempre lo stesso.", style: TextStyle(fontSize: 12, color: tenue)),
+        Text("Un solo referente, sempre lo stesso: risponde direttamente Antonio.",
+            style: TextStyle(fontSize: 12, color: tenue)),
         Text("Vent'anni, oltre 300 clienti a Napoli e Caserta.", style: TextStyle(fontSize: 12, color: tenue)),
+        const SizedBox(height: 6),
+        Text("Lun-Ven 9:00-19:30 · Sab 9:00-13:00", style: TextStyle(fontSize: 11.5, color: tenue)),
         const SizedBox(height: 10),
         Wrap(spacing: 8, runSpacing: 6, children: [
           pulsante("Chiama 339 288 5800", Icons.call, _gaTelefono),
           pulsante("WhatsApp", Icons.chat, _gaWhatsApp),
+          pulsante("Scrivici", Icons.mail_outline, _gaMail),
+          pulsante("Prenota", Icons.event_available, _gaPrenota),
         ]),
         const SizedBox(height: 8),
         InkWell(
@@ -85,6 +92,8 @@ Widget gaRiquadroGelormini(BuildContext context) {
               style: const TextStyle(
                   fontSize: 12, color: Color(0xFF3C6DF0), decoration: TextDecoration.underline)),
         ),
+        const SizedBox(height: 4),
+        Text("Casalnuovo di Napoli (NA) · P.IVA 08419001212", style: TextStyle(fontSize: 10.5, color: tenue)),
       ],
     ),
   );
