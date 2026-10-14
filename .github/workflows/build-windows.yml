@@ -718,6 +718,14 @@ jobs:
           if grep -qaF "admin.rustdesk.com" "$f"; then echo "API di rustdesk.com ANCORA presente"; exit 1; fi
           for a in logo.png logo_dark.png; do cmp "./ga/risorse/$a" "./rustdesk/data/flutter_assets/assets/$a" || { echo "$a non e' quello del repository"; exit 1; }; done
           n=$(ls ./SignOutput/*.msi | wc -l); [ "$n" = 1 ] || { echo "attesi 1 MSI, trovati $n"; exit 1; }
+          cmp ./res/icon.png ./ga/risorse/icona.png || { echo "icona non sostituita"; exit 1; }
+          cmp ./res/icon.ico ./flutter/windows/runner/resources/app_icon.ico || { echo "icona del programma non e' quella generata"; exit 1; }
+          s=./rustdesk/data/app.so; [ -s "$s" ] || { echo "app.so assente"; exit 1; }
+          for x in "Informatica Gelormini" "Un solo referente, sempre lo stesso" "339 288 5800" "https://www.informaticagelormini.com" "https://wa.me/393392885800" "mailto:a.gelormini@informaticagelormini.com" "https://www.informaticagelormini.com/prenota/"; do
+            grep -qaF "$x" "$s" || { echo "testo della grafica assente in app.so: $x"; exit 1; }
+          done
+          grep -qaF "https://rustdesk.com/download" "$s" && { echo "collegamento di download di rustdesk.com ancora presente"; exit 1; }
+          [ -s "./rustdesk/${{ env.appname }}.exe" ] || { echo "eseguibile ${{ env.appname }}.exe assente"; exit 1; }
           [ -s "./SignOutput/${{ env.filename }}.msi" ] || { echo "MSI assente"; exit 1; }
           sha256sum "$f" | sed 's#  .*#  librustdesk.dll#' > ./SignOutput/librustdesk.dll.sha256
           cat ./SignOutput/librustdesk.dll.sha256
@@ -740,7 +748,16 @@ jobs:
             if ($x.Count -ne 1) { throw "nell'MSI $a trovato $($x.Count) volte" }
             if ((Get-FileHash $x[0].FullName).Hash -ne (Get-FileHash "./ga/risorse/$a").Hash) { throw "$a dentro l'MSI diverso dal repository" }
           }
-          Write-Output "MSI verificato: DLL e loghi sono quelli controllati"
+          $exe = @(Get-ChildItem -Path $dir -Recurse -Filter "${{ env.appname }}.exe")
+          if ($exe.Count -ne 1) { throw "nell'MSI ${{ env.appname }}.exe trovato $($exe.Count) volte" }
+          $vi = $exe[0].VersionInfo
+          Write-Output "ProductName=$($vi.ProductName) CompanyName=$($vi.CompanyName) FileDescription=$($vi.FileDescription)"
+          if ($vi.ProductName -ne "${{ env.appname }}") { throw "ProductName dell'eseguibile non e' ${{ env.appname }}" }
+          if ($vi.CompanyName -ne "${{ env.compname }}") { throw "CompanyName dell'eseguibile non e' ${{ env.compname }}" }
+          $so = @(Get-ChildItem -Path $dir -Recurse -Filter app.so)
+          if ($so.Count -ne 1) { throw "nell'MSI app.so trovato $($so.Count) volte" }
+          if ((Get-FileHash $so[0].FullName).Hash -ne (Get-FileHash ./rustdesk/data/app.so).Hash) { throw "app.so dentro l'MSI diverso da quello verificato" }
+          Write-Output "MSI verificato: DLL, app.so (grafica e contatti), eseguibile col nome giusto e loghi sono quelli controllati"
 
       - name: Impronte
         shell: bash
