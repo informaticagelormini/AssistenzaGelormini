@@ -41,7 +41,8 @@ env:
   server: "remote.ga-informatica.com"
   serverPort: "21216"
   key: "CHIAVE_PUBBLICA_DA_METTERE"
-  apiServer: ""
+  # rubrica condivisa (decisione del tecnico 14/10): la console della VPS, raggiungibile SOLO via Tailscale (tailscale0)
+  apiServer: "http://100.97.211.33:21114"
   iconlink_url: "locale"
   logolink_url: "locale"
   removeNewVersionNotif: "true"
