@@ -4,8 +4,10 @@ Client di assistenza remota di **Informatica Gelormini**, ricavato da [RustDesk]
 (versione indicata in `.github/workflows/build-windows.yml`, variabile `VERSION`) con:
 
 - nome del programma *AssistenzaGelormini*, icona e logo di Informatica Gelormini (`risorse/`);
+- colori del sito (blu #3C6DF0, blu notte #181B31), logo chiaro e scuro, riquadro con slogan, telefono/WhatsApp e sito;
 - indirizzo e chiave **pubblica** del server di Informatica Gelormini scritti nel programma;
-- controllo degli aggiornamenti verso rustdesk.com tolto (il programma non viene sostituito dal RustDesk normale);
+- controllo degli aggiornamenti verso rustdesk.com tolto e VERIFICATO in compilazione (il programma non viene sostituito dal RustDesk normale);
+- rubrica condivisa sul server di Informatica Gelormini, raggiungibile solo dalla sua rete privata (Tailscale);
 - collegamenti verso www.informaticagelormini.com.
 
 Nessuna password o segreto e' contenuto in questo repository: la chiave del server qui presente e' quella pubblica,

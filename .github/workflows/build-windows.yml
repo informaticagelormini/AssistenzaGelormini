@@ -288,8 +288,14 @@ jobs:
           ! grep -qF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" ./libs/hbb_common/src/config.rs || { echo "chiave di rustdesk.com ancora presente"; exit 1; }
           grep -qE "pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta rendezvous non scritta"; exit 1; }
           grep -qE "pub const RELAY_PORT: i32 = $RELAY_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta relay non scritta"; exit 1; }
+          grep -qF "$API_SERVER" ./src/common.rs || { echo "server API (rubrica) non scritto"; exit 1; }
+          ! grep -qF "https://admin.rustdesk.com" ./src/common.rs || { echo "API di rustdesk.com ancora presente"; exit 1; }
           # ./flutter/pubspec.yaml
           #sed -i '/intl:/a \ \ archive: ^3.6.1' ./flutter/pubspec.yaml
+
+      - name: grafica Informatica Gelormini (colori e riquadro contatti)
+        shell: bash
+        run: python ./ga/.github/patches/ga_grafica.py
 
       - name: remove setup server tip
         uses: nick-fields/retry@v3
@@ -469,12 +475,14 @@ jobs:
           grep -n "key.is_empty()" ./src/client.rs || true
 
       - name: removeNewVersionNotif
-        continue-on-error: true
         if: env.removeNewVersionNotif == 'true'
         shell: bash
         run: | 
+          grep -q 'let (request, url) =' ./src/common.rs || { echo "controllo aggiornamenti non trovato in common.rs: sorgente cambiato"; exit 1; }
           sed -i -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
           sed -i '/let (request, url) =/,/Ok(())/{/Ok(())/!d}' ./src/common.rs
+          ! grep -q 'updateUrl.isNotEmpty' ./flutter/lib/desktop/pages/desktop_home_page.dart || { echo "avviso di aggiornamento ancora presente"; exit 1; }
+          ! grep -q 'let (request, url) =' ./src/common.rs || { echo "richiesta di aggiornamento ancora presente"; exit 1; }
 
       # - name: run as admin
       #   continue-on-error: true
@@ -579,6 +587,7 @@ jobs:
           continue_on_error: true
           command: |
             Copy-Item ./ga/risorse/logo.png ./rustdesk/data/flutter_assets/assets/logo.png
+            Copy-Item ./ga/risorse/logo_dark.png ./rustdesk/data/flutter_assets/assets/logo_dark.png
 
       - name: find Runner.res
         # Windows: find Runner.res (compiled from ./flutter/windows/runner/Runner.rc), copy to ./Runner.res
@@ -709,8 +718,14 @@ jobs:
           grep -caF "${{ env.server }}" "$f" | grep -qv '^0$' || { echo "server NON trovato in librustdesk.dll"; exit 1; }
           if grep -qaF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" "$f"; then echo "chiave di rustdesk.com ANCORA presente"; exit 1; fi
           if grep -qaF "rs-ny.rustdesk.com" "$f"; then echo "server di rustdesk.com ANCORA presente"; exit 1; fi
+          grep -caF "${{ env.apiServer }}" "$f" | grep -qv '^0$' || { echo "server API NON trovato in librustdesk.dll"; exit 1; }
+          if grep -qaF "admin.rustdesk.com" "$f"; then echo "API di rustdesk.com ANCORA presente"; exit 1; fi
           [ -s "./SignOutput/${{ env.filename }}.exe" ] || { echo "eseguibile assente"; exit 1; }
-          cd ./SignOutput && sha256sum *.exe *.msi > SHA256SUMS.txt; cat SHA256SUMS.txt
+          d=$(sha256sum "$f" | cut -d' ' -f1)
+          cd ./SignOutput && sha256sum *.exe *.msi > SHA256SUMS.txt
+          # NEO giro 1 (client): l'impronta del componente principale, da confrontare con quello INSTALLATO sui PC
+          echo "$d  librustdesk.dll (dentro il pacchetto: si confronta con C:/Program Files/${{ env.appname }}/librustdesk.dll)" >> SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
       - name: Pubblica la Release
         shell: bash
