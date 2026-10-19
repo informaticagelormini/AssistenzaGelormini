@@ -261,4 +261,40 @@ const double gaAltezzaMassima = 520.0;
 ''', 1)
     # a destra della colonna di ID e password lo spazio c'e' gia' (margine destro 11): 4 invece di 20, pulsanti da 122 punti
     cambia(HOME, "    margin: const EdgeInsets.fromLTRB(20, 14, 16, 4),\n", "    margin: const EdgeInsets.fromLTRB(4, 14, 16, 4),\n", 1)
+    # 20/10, foto del tecnico sul PC 435038872: con la ga5 "Installa" restava in fondo alla colonna sinistra (da scorrere) e sotto il
+    # riquadro a destra c'era spazio vuoto. La scheda Installa/Esci (buildHelpCards) va a DESTRA sotto il riquadro, coi suoi stessi bordi.
+    MEZZO = '''        future: Future.value(
+            Obx(() => buildHelpCards(stateGlobal.updateUrl.value))),
+        builder: (_, data) {
+          if (data.hasData) {
+            if (isIncomingOnly) {
+              if (isInHomePage()) {
+                Future.delayed(Duration(milliseconds: 300), () {
+                  _updateWindowSize();
+                });
+              }
+            }
+            return data.data!;
+          } else {
+            return const Offstage();
+          }
+        },
+'''
+    cambia(HOME, "      FutureBuilder<Widget>(\n" + MEZZO + "      ),\n    ];\n",
+           "    ];\n    // Informatica Gelormini (ga_grafica.py, punto 5): la scheda Installa/Esci va nella colonna di destra\n"
+           "    final gaSchede = FutureBuilder<Widget>(\n" + MEZZO + "    );\n", 1)
+    cambia(HOME, "                        SizedBox(width: gaLarghezzaRiquadro, child: gaRiquadroGelormini(context)),\n",
+           "                        SizedBox(\n"
+           "                            width: gaLarghezzaRiquadro,\n"
+           "                            child: Column(children: [\n"
+           "                              gaRiquadroGelormini(context),\n"
+           "                              Padding(padding: const EdgeInsets.fromLTRB(4, 0, 16, 0), child: gaSchede),\n"
+           "                            ])),\n", 1)
+    # il testo di RustDesk ("A causa del Controllo Account Utente (UAC) ...", 5 righe) spaventa il cliente e allunga la colonna oltre i
+    # 520 punti: frase breve. translate() su una chiave assente restituisce la frase stessa.
+    cambia(HOME, '''            "", bind.isOutgoingOnly() ? "" : "install_tip", "Install",\n''',
+           '''            "", bind.isOutgoingOnly() ? "" : "Installa AssistenzaGelormini su questo PC: l'assistenza funzionerà sempre, anche dopo un riavvio.", "Install",\n''', 1)
+    with open(HOME, encoding="utf-8") as f:
+        if f.read().count("gaSchede") != 2:
+            sys.exit("ga_grafica: scheda Installa non spostata una sola volta")
     print("ga_grafica: finestra clienti a due colonne, altezza massima %d" % 520)
