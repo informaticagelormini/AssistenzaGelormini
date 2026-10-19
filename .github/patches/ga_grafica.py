@@ -160,3 +160,15 @@ with open(COMMONRS, encoding="utf-8") as f:
     if (t.count('"conn-type".to_owned(), "incoming"') == 1) != (VARIANTE == "clienti"):
         sys.exit("ga_grafica: solo-ricevere presente/assente in modo diverso dalla variante")
 print("ga_grafica: impostazioni fisse aggiunte, variante %s" % VARIANTE)
+
+# 4. rubrica e collegamenti insieme (tutte e due le varianti).
+# MISURA 19/10: col tecnico dentro la rubrica (access_token presente) il client 1.5.0 pretende dal server di rendezvous lo scambio di
+# chiavi su TCP (client.rs: legacy_secure = !key.is_empty() && (!token.is_empty() || ...) -> secure_tcp) e lo aspetta 18 s:
+# "Failed to secure tcp: deadline has elapsed". hbbs gratuito (rustdesk-server 1.1.16, anche master) non lo implementa; il token
+# serve solo al server a pagamento. Uscito dall'account il collegamento riesce (provato 12:29 ufficio -> lab). Quindi al server di
+# rendezvous non si manda il token, come RustDesk fa gia' per gli "altri server" (stessa riga, ramo other_server). La rubrica (API) e
+# la password salvata nella rubrica personale (try_get_password_from_personal_ab) leggono access_token per conto loro: restano.
+CLIENTRS = "src/client.rs"
+cambia(CLIENTRS, '            (a.as_ref(), b.as_ref(), c.as_ref(), "")\n        } else {\n            (peer, "", key, token)\n        };\n',
+       '            (a.as_ref(), b.as_ref(), c.as_ref(), "")\n        } else {\n            // Informatica Gelormini: niente token al server di rendezvous gratuito (ga_grafica.py, punto 4)\n            let _ = token;\n            (peer, "", key, "")\n        };\n', 1)
+print("ga_grafica: token non mandato al server di rendezvous")
