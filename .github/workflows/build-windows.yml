@@ -80,6 +80,7 @@ jobs:
         job:
           # - { target: i686-pc-windows-msvc        , os: windows-2022                  }
           # - { target: x86_64-pc-windows-gnu       , os: windows-2022                  }
+          # due varianti dallo stesso sorgente (ga_grafica.py): il programma del tecnico e quello da dare ai clienti
           - {
               target: x86_64-pc-windows-msvc,
               os: windows-2022,
@@ -87,6 +88,16 @@ jobs:
               flutter-arch: x64,
               vcpkg-triplet: x64-windows-static,
               build-args: "--vram",
+              variante: tecnico,
+            }
+          - {
+              target: x86_64-pc-windows-msvc,
+              os: windows-2022,
+              arch: x86_64,
+              flutter-arch: x64,
+              vcpkg-triplet: x64-windows-static,
+              build-args: "--vram",
+              variante: clienti,
             }
           # - { target: aarch64-pc-windows-msvc, os: windows-2022, arch: aarch64 }
     steps:
@@ -300,7 +311,7 @@ jobs:
 
       - name: grafica Informatica Gelormini (colori e riquadro contatti)
         shell: bash
-        run: python ./ga/.github/patches/ga_grafica.py
+        run: python ./ga/.github/patches/ga_grafica.py ${{ matrix.job.variante }}
 
       - name: remove setup server tip
         uses: nick-fields/retry@v3
@@ -731,6 +742,12 @@ jobs:
           grep -qaF "https://rustdesk.com/download" "$s" && { echo "collegamento di download di rustdesk.com ancora presente"; exit 1; }
           [ -s "./rustdesk/${{ env.appname }}.exe" ] || { echo "eseguibile ${{ env.appname }}.exe assente"; exit 1; }
           [ -s "./SignOutput/${{ env.filename }}.msi" ] || { echo "MSI assente"; exit 1; }
+          # variante: il segno scritto da ga_grafica.py deve esserci, e quello dell'altra variante no
+          if [ "${{ matrix.job.variante }}" = clienti ]; then si="GA-VERSIONE-CLIENTI"; no="GA-VERSIONE-TECNICO"; else si="GA-VERSIONE-TECNICO"; no="GA-VERSIONE-CLIENTI"; fi
+          grep -qaF "$si" "$f" || { echo "segno della variante ${{ matrix.job.variante }} assente in librustdesk.dll"; exit 1; }
+          if grep -qaF "$no" "$f"; then echo "segno dell'altra variante presente in librustdesk.dll"; exit 1; fi
+          [ -s "./SignOutput/${{ env.filename }}.exe" ] || { echo "eseguibile portatile assente"; exit 1; }
+          echo "variante ${{ matrix.job.variante }}: segno presente, l'altro assente"
           sha256sum "$f" | sed 's#  .*#  librustdesk.dll#' > ./SignOutput/librustdesk.dll.sha256
           cat ./SignOutput/librustdesk.dll.sha256
 
@@ -767,7 +784,14 @@ jobs:
       - name: Impronte
         shell: bash
         run: |
-          cd ./SignOutput && sha256sum "${{ env.filename }}.msi" librustdesk.dll.sha256 > SHA256SUMS.txt && cat SHA256SUMS.txt
+          cd ./SignOutput
+          if [ "${{ matrix.job.variante }}" = clienti ]; then
+            cp "${{ env.filename }}.exe" "${{ env.filename }}-Cliente.exe"
+            sha256sum "${{ env.filename }}-Cliente.exe" librustdesk.dll.sha256 > SHA256SUMS.txt
+          else
+            sha256sum "${{ env.filename }}.msi" librustdesk.dll.sha256 > SHA256SUMS.txt
+          fi
+          cat SHA256SUMS.txt
 
       - name: Pubblica la Release
         shell: bash
@@ -775,8 +799,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -e
-          tag="v${{ env.VERSION }}-ga${{ github.run_number }}"
-          gh release create "$tag" "./SignOutput/${{ env.filename }}.msi" ./SignOutput/librustdesk.dll.sha256 ./SignOutput/SHA256SUMS.txt \
+          if [ "${{ matrix.job.variante }}" = clienti ]; then
+            tag="v${{ env.VERSION }}-ga${{ github.run_number }}-clienti"
+            file="./SignOutput/${{ env.filename }}-Cliente.exe"
+            titolo="AssistenzaGelormini per i CLIENTI ${{ env.VERSION }} (compilazione ${{ github.run_number }})"
+          else
+            tag="v${{ env.VERSION }}-ga${{ github.run_number }}"
+            file="./SignOutput/${{ env.filename }}.msi"
+            titolo="AssistenzaGelormini ${{ env.VERSION }} (compilazione ${{ github.run_number }})"
+          fi
+          gh release create "$tag" "$file" ./SignOutput/librustdesk.dll.sha256 ./SignOutput/SHA256SUMS.txt \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" \
-            --title "AssistenzaGelormini ${{ env.VERSION }} (compilazione ${{ github.run_number }})" \
+            --title "$titolo" \
             --notes "Client RustDesk ${{ env.VERSION }} personalizzato per Informatica Gelormini. Server ${{ env.server }}:${{ env.serverPort }}. Sorgente: rustdesk/rustdesk tag ${{ env.VERSION }} + questo repository (commit ${{ github.sha }}). Licenza AGPL-3.0."

@@ -3,9 +3,15 @@
 Colori del sito www.informaticagelormini.com (blu #3C6DF0, blu notte #181B31/#1A2240) e riquadro con slogan e contatti
 sotto ID e password, in tutte e due le versioni (tecnico e clienti). Ogni sostituzione e' su testo esatto con un numero
 di occorrenze atteso: se RustDesk cambia il sorgente la compilazione si FERMA qui invece di produrre un programma diverso
-da quello voluto. Si lancia dalla radice del sorgente di RustDesk.
+da quello voluto. Si lancia dalla radice del sorgente di RustDesk, con la variante come argomento:
+  tecnico  il programma di Antonio (riceve e si collega), senza la voce "Arresta servizio";
+  clienti  il programma da dare ai clienti: SOLO ricevere, impostazioni chiuse, senza "Arresta servizio".
 """
 import sys
+
+if len(sys.argv) != 2 or sys.argv[1] not in ("tecnico", "clienti"):
+    sys.exit("ga_grafica: uso: ga_grafica.py tecnico|clienti")
+VARIANTE = sys.argv[1]
 
 def cambia(percorso, vecchio, nuovo, volte):
     with open(percorso, encoding="utf-8") as f:
@@ -106,3 +112,44 @@ with open(HOME, encoding="utf-8") as f:
     if f.read().count("Widget gaRiquadroGelormini(") != 1:
         sys.exit("ga_grafica: riquadro non aggiunto una sola volta")
 print("ga_grafica: riquadro aggiunto")
+
+# 3. impostazioni fisse scritte nel programma (src/common.rs, load_custom_client).
+# Il 18/10 la voce "Arresta servizio" del menu dell'icona ha CANCELLATO il servizio sul PC del laboratorio
+# (tray.rs -> platform::uninstall_service: sc delete): in tutte e due le varianti la si nasconde (hide-stop-service,
+# che nasconde anche il pulsante nelle impostazioni). Nella variante clienti in piu': solo ricevere
+# (conn-type=incoming) e impostazioni chiuse (disable-settings). Il custom.txt firmato di RustDesk non si usa piu'.
+COMMONRS = "src/common.rs"
+if VARIANTE == "clienti":
+    CLIENTI = ('''    log::info!("GA-VERSIONE-CLIENTI: solo ricevere, impostazioni chiuse");
+    let mut hard = config::HARD_SETTINGS.write().unwrap();
+    hard.insert("conn-type".to_owned(), "incoming".to_owned());
+    hard.insert("disable-settings".to_owned(), "Y".to_owned());
+''')
+else:
+    CLIENTI = '''    log::info!("GA-VERSIONE-TECNICO");
+'''
+FISSE = ('''
+// --- Informatica Gelormini (aggiunto in compilazione da .github/patches/ga_grafica.py) ---
+fn ga_impostazioni_fisse() {
+    config::BUILTIN_SETTINGS
+        .write()
+        .unwrap()
+        .insert(keys::OPTION_HIDE_STOP_SERVICE.to_owned(), "Y".to_owned());
+    // segno della variante dentro librustdesk.dll, controllato dal workflow (valore in una tabella: il compilatore lo tiene)
+    config::BUILTIN_SETTINGS
+        .write()
+        .unwrap()
+        .insert("ga-variante".to_owned(), "GA-VERSIONE-%s".to_owned());
+''' % VARIANTE.upper() + CLIENTI + '''}
+''')
+cambia(COMMONRS, "pub fn load_custom_client() {\n    #[cfg(debug_assertions)]\n",
+       "pub fn load_custom_client() {\n    ga_impostazioni_fisse();\n    if true {\n        return;\n    }\n    #[cfg(debug_assertions)]\n", 1)
+with open(COMMONRS, "a", encoding="utf-8") as f:
+    f.write(FISSE)
+with open(COMMONRS, encoding="utf-8") as f:
+    t = f.read()
+    if t.count("fn ga_impostazioni_fisse()") != 1 or t.count("ga_impostazioni_fisse();") != 1:
+        sys.exit("ga_grafica: impostazioni fisse non aggiunte una sola volta")
+    if (t.count('"conn-type".to_owned(), "incoming"') == 1) != (VARIANTE == "clienti"):
+        sys.exit("ga_grafica: solo-ricevere presente/assente in modo diverso dalla variante")
+print("ga_grafica: impostazioni fisse aggiunte, variante %s" % VARIANTE)

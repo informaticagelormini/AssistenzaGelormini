@@ -8,7 +8,16 @@ Client di assistenza remota di **Informatica Gelormini**, ricavato da [RustDesk]
 - indirizzo e chiave **pubblica** del server di Informatica Gelormini scritti nel programma;
 - controllo degli aggiornamenti verso rustdesk.com tolto e VERIFICATO in compilazione (il programma non viene sostituito dal RustDesk normale);
 - rubrica condivisa sul server di Informatica Gelormini, raggiungibile solo dalla sua rete privata (Tailscale);
-- collegamenti verso www.informaticagelormini.com.
+- collegamenti verso www.informaticagelormini.com;
+- la voce "Arresta servizio" (menu dell'icona e impostazioni) nascosta: su Windows cancella il servizio e il PC smette di
+  ricevere collegamenti.
+
+Ogni compilazione produce due varianti dallo stesso sorgente (`.github/patches/ga_grafica.py tecnico|clienti`):
+
+- **tecnico**: `AssistenzaGelormini.msi`, il programma di Informatica Gelormini (si collega e riceve);
+- **clienti**: `AssistenzaGelormini-Cliente.exe`, un solo file da aprire senza installare: mostra ID, password e i contatti,
+  puo' SOLO ricevere collegamenti e non ha impostazioni. Si puo' installare dal pulsante nel programma, per l'assistenza
+  senza presidio.
 
 Nessuna password o segreto e' contenuto in questo repository: la chiave del server qui presente e' quella pubblica,
 che ogni client riceve comunque dal server.
@@ -17,7 +26,8 @@ che ogni client riceve comunque dal server.
 
 Ogni modifica sul ramo `main` avvia GitHub Actions (`build-windows.yml`, Windows x64, circa 45 minuti). Il workflow
 controlla che nel programma ci siano il server e la chiave giusti e che NON ci siano quelli di rustdesk.com, poi
-pubblica come Release SOLO cio' che ha verificato: l'MSI (controllato anche dall'interno), `librustdesk.dll.sha256` e
+pubblica come Release SOLO cio' che ha verificato: per il tecnico l'MSI (controllato anche dall'interno), per i clienti
+l'eseguibile `-Cliente.exe` (tag `...-clienti`), con `librustdesk.dll.sha256` e
 `SHA256SUMS.txt`.
 
 ## Provenienza e licenze
