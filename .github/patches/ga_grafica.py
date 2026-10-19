@@ -124,6 +124,13 @@ if VARIANTE == "clienti":
     let mut hard = config::HARD_SETTINGS.write().unwrap();
     hard.insert("conn-type".to_owned(), "incoming".to_owned());
     hard.insert("disable-settings".to_owned(), "Y".to_owned());
+    drop(hard);
+    // con le impostazioni chiuse la riga di comando (--password per l'accesso senza presidio, da amministratore) resta permessa:
+    // core_main.rs is_cli_setting_change_disabled() la blocca se non c'e' questa chiave (NEO 19/10)
+    config::BUILTIN_SETTINGS
+        .write()
+        .unwrap()
+        .insert(keys::OPTION_ALLOW_COMMAND_LINE_SETTINGS_WHEN_SETTINGS_DISABLED.to_owned(), "Y".to_owned());
 ''')
 else:
     CLIENTI = '''    log::info!("GA-VERSIONE-TECNICO");

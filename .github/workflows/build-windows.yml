@@ -664,6 +664,10 @@ jobs:
           popd
           mkdir -p ./SignOutput
           mv ./target/release/rustdesk-portable-packer.exe "./SignOutput/rustdesk.exe"
+          # impronta del portatile appena costruito dalla cartella ./rustdesk (la stessa verificata dopo): quello pubblicato deve
+          # essere QUESTO, byte per byte (una firma o una sostituzione successive fermano la pubblicazione)
+          sha256sum "./SignOutput/rustdesk.exe" | cut -d' ' -f1 > ./portatile-costruito.sha256
+          cat ./portatile-costruito.sha256
 
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
@@ -747,6 +751,7 @@ jobs:
           grep -qaF "$si" "$f" || { echo "segno della variante ${{ matrix.job.variante }} assente in librustdesk.dll"; exit 1; }
           if grep -qaF "$no" "$f"; then echo "segno dell'altra variante presente in librustdesk.dll"; exit 1; fi
           [ -s "./SignOutput/${{ env.filename }}.exe" ] || { echo "eseguibile portatile assente"; exit 1; }
+          [ "$(sha256sum "./SignOutput/${{ env.filename }}.exe" | cut -d' ' -f1)" = "$(cat ./portatile-costruito.sha256)" ] || { echo "il portatile NON e' quello costruito dalla cartella verificata"; exit 1; }
           echo "variante ${{ matrix.job.variante }}: segno presente, l'altro assente"
           sha256sum "$f" | sed 's#  .*#  librustdesk.dll#' > ./SignOutput/librustdesk.dll.sha256
           cat ./SignOutput/librustdesk.dll.sha256
@@ -787,6 +792,7 @@ jobs:
           cd ./SignOutput
           if [ "${{ matrix.job.variante }}" = clienti ]; then
             cp "${{ env.filename }}.exe" "${{ env.filename }}-Cliente.exe"
+            [ "$(sha256sum "${{ env.filename }}-Cliente.exe" | cut -d' ' -f1)" = "$(cat ../portatile-costruito.sha256)" ] || { echo "il portatile da pubblicare NON e' quello costruito"; exit 1; }
             sha256sum "${{ env.filename }}-Cliente.exe" librustdesk.dll.sha256 > SHA256SUMS.txt
           else
             sha256sum "${{ env.filename }}.msi" librustdesk.dll.sha256 > SHA256SUMS.txt
@@ -794,6 +800,8 @@ jobs:
           cat SHA256SUMS.txt
 
       - name: Pubblica la Release
+        # si pubblica solo da main (anche una corsa manuale su un altro ramo compila e verifica, ma non pubblica)
+        if: github.ref == 'refs/heads/main'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -803,12 +811,14 @@ jobs:
             tag="v${{ env.VERSION }}-ga${{ github.run_number }}-clienti"
             file="./SignOutput/${{ env.filename }}-Cliente.exe"
             titolo="AssistenzaGelormini per i CLIENTI ${{ env.VERSION }} (compilazione ${{ github.run_number }})"
+            latest="--latest=false"
           else
             tag="v${{ env.VERSION }}-ga${{ github.run_number }}"
             file="./SignOutput/${{ env.filename }}.msi"
             titolo="AssistenzaGelormini ${{ env.VERSION }} (compilazione ${{ github.run_number }})"
+            latest="--latest"
           fi
-          gh release create "$tag" "$file" ./SignOutput/librustdesk.dll.sha256 ./SignOutput/SHA256SUMS.txt \
+          gh release create "$tag" "$file" ./SignOutput/librustdesk.dll.sha256 ./SignOutput/SHA256SUMS.txt $latest \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" \
             --title "$titolo" \
             --notes "Client RustDesk ${{ env.VERSION }} personalizzato per Informatica Gelormini. Server ${{ env.server }}:${{ env.serverPort }}. Sorgente: rustdesk/rustdesk tag ${{ env.VERSION }} + questo repository (commit ${{ github.sha }}). Licenza AGPL-3.0."
