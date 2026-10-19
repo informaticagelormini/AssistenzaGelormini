@@ -1,7 +1,7 @@
 """Grafica di Informatica Gelormini sul sorgente di RustDesk (Flutter desktop).
 
 Colori del sito www.informaticagelormini.com (blu #3C6DF0, blu notte #181B31/#1A2240) e riquadro con slogan e contatti
-sotto ID e password, in tutte e due le versioni (tecnico e clienti). Ogni sostituzione e' su testo esatto con un numero
+(tecnico: sotto ID e password; clienti: in una seconda colonna a destra, punto 5). Ogni sostituzione e' su testo esatto con un numero
 di occorrenze atteso: se RustDesk cambia il sorgente la compilazione si FERMA qui invece di produrre un programma diverso
 da quello voluto. Si lancia dalla radice del sorgente di RustDesk, con la variante come argomento:
   tecnico  il programma di Antonio (riceve e si collega), senza la voce "Arresta servizio";
@@ -36,9 +36,10 @@ cambia(COMMON, "scaffoldBackgroundColor: Color(0xFF18191E),", "scaffoldBackgroun
 cambia(COMMON, "dialogBackgroundColor: Color(0xFF18191E),", "dialogBackgroundColor: Color(0xFF181B31),", 1)
 cambia(COMMON, "cardColor: Color(0xFF24252B),", "cardColor: Color(0xFF1A2240),", 1)
 
-# 2. riquadro Informatica Gelormini sotto ID e password
-cambia(HOME, "      if (!isOutgoingOnly) buildPasswordBoard(context),\n",
-       "      if (!isOutgoingOnly) buildPasswordBoard(context),\n      gaRiquadroGelormini(context),\n", 1)
+# 2. riquadro Informatica Gelormini sotto ID e password (tecnico); nei clienti va A DESTRA, punto 5
+if VARIANTE == "tecnico":
+    cambia(HOME, "      if (!isOutgoingOnly) buildPasswordBoard(context),\n",
+           "      if (!isOutgoingOnly) buildPasswordBoard(context),\n      gaRiquadroGelormini(context),\n", 1)
 
 RIQUADRO = r'''
 
@@ -172,3 +173,92 @@ CLIENTRS = "src/client.rs"
 cambia(CLIENTRS, '            (a.as_ref(), b.as_ref(), c.as_ref(), "")\n        } else {\n            (peer, "", key, token)\n        };\n',
        '            (a.as_ref(), b.as_ref(), c.as_ref(), "")\n        } else {\n            // Informatica Gelormini: niente token al server di rendezvous gratuito (ga_grafica.py, punto 4)\n            let _ = token;\n            (peer, "", key, "")\n        };\n', 1)
 print("ga_grafica: token non mandato al server di rendezvous")
+
+# 5. finestra del programma clienti quadrata e con altezza massima fissa (solo variante clienti).
+# MISURA 19/10, tecnico: la finestra si dimensiona sull'altezza del contenuto (desktop_home_page.dart _updateWindowSize ->
+# getIncomingOnlyHomeSize), largo 280; col riquadro sotto diventava cosi' lunga che sul portatile 187300889 "Installa" restava fuori
+# dallo schermo e il programma non si poteva installare. Quindi: riquadro in una seconda colonna A DESTRA (la colonna di sinistra con
+# ID, password e Installa resta larga 280 e allo stesso posto della ga4), contenuto scorrevole, altezza della finestra al massimo
+# gaAltezzaMassima. NEO giri 1-3 NO-GO su un adattamento DINAMICO allo schermo (lettura dell'area utile, timer, riposizionamento:
+# ogni giro un caso nuovo, l'ultimo un ciclo fra due monitor): tolto, la misura e' fissa e non legge lo schermo.
+if VARIANTE == "clienti":
+    cambia(HOME, "        width: isIncomingOnly ? 280.0 : 200.0,\n",
+           "        width: isIncomingOnly ? 280.0 + gaLarghezzaRiquadro : 200.0,\n", 1)
+    cambia(HOME, '''            Column(
+              children: [
+                SingleChildScrollView(
+                  controller: _leftPaneScrollController,
+                  child: Column(
+                    key: _childKey,
+                    children: children,
+                  ),
+                ),
+                Expanded(child: Container())
+              ],
+            ),
+''', '''            Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _leftPaneScrollController,
+                    child: Row(
+                      key: _childKey,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(width: 280.0, child: Column(children: children)),
+                        SizedBox(width: gaLarghezzaRiquadro, child: gaRiquadroGelormini(context)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+''', 1)
+    cambia(COMMON, '''  return imcomingOnlyHomeSize +
+      Offset(magicWidth, kDesktopRemoteTabBarHeight + magicHeight);
+}
+''', '''  final ga = imcomingOnlyHomeSize +
+      Offset(magicWidth, kDesktopRemoteTabBarHeight + magicHeight);
+  // Informatica Gelormini (ga_grafica.py, punto 5): mai piu' alta di gaAltezzaMassima, il resto si scorre
+  return Size(ga.width, ga.height > gaAltezzaMassima ? gaAltezzaMassima : ga.height);
+}
+
+// --- Informatica Gelormini (aggiunto in compilazione da .github/patches/ga_grafica.py, punto 5) ---
+const double gaLarghezzaRiquadro = 300.0;
+// 520 punti con la barra del titolo: entra nell'area utile di 1280x720 al 125% (576 - 48 di barra delle applicazioni)
+const double gaAltezzaMassima = 520.0;
+''', 1)
+    with open(HOME, encoding="utf-8") as f:
+        if f.read().count("gaRiquadroGelormini(context)") != 1:
+            sys.exit("ga_grafica: riquadro della variante clienti non messo una sola volta")
+    with open(COMMON, encoding="utf-8") as f:
+        if f.read().count("const double gaAltezzaMassima = 520.0;") != 1:
+            sys.exit("ga_grafica: altezza massima non aggiunta una sola volta")
+    # nella colonna di destra (300 punti) i pulsanti in Wrap andrebbero a capo in modo irregolare: due righe da due, stessa larghezza;
+    # il numero passa nel testo. Solo clienti: il riquadro del tecnico resta quello della ga4.
+    cambia(HOME, '''        Text("Lun-Ven 9:00-19:30 · Sab 9:00-13:00", style: TextStyle(fontSize: 11.5, color: tenue)),
+        const SizedBox(height: 10),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          pulsante("Chiama 339 288 5800", Icons.call, _gaTelefono),
+          pulsante("WhatsApp", Icons.chat, _gaWhatsApp),
+          pulsante("Scrivici", Icons.mail_outline, _gaMail),
+          pulsante("Prenota", Icons.event_available, _gaPrenota),
+        ]),
+''', '''        Text("Tel. e WhatsApp 339 288 5800", style: TextStyle(fontSize: 12, color: tenue)),
+        Text("Lun-Ven 9:00-19:30 · Sab 9:00-13:00", style: TextStyle(fontSize: 11.5, color: tenue)),
+        const SizedBox(height: 10),
+        Row(children: [
+          Expanded(child: pulsante("Chiama", Icons.call, _gaTelefono)),
+          const SizedBox(width: 8),
+          Expanded(child: pulsante("WhatsApp", Icons.chat, _gaWhatsApp)),
+        ]),
+        const SizedBox(height: 6),
+        Row(children: [
+          Expanded(child: pulsante("Scrivici", Icons.mail_outline, _gaMail)),
+          const SizedBox(width: 8),
+          Expanded(child: pulsante("Prenota", Icons.event_available, _gaPrenota)),
+        ]),
+''', 1)
+    # a destra della colonna di ID e password lo spazio c'e' gia' (margine destro 11): 4 invece di 20, pulsanti da 122 punti
+    cambia(HOME, "    margin: const EdgeInsets.fromLTRB(20, 14, 16, 4),\n", "    margin: const EdgeInsets.fromLTRB(4, 14, 16, 4),\n", 1)
+    print("ga_grafica: finestra clienti a due colonne, altezza massima %d" % 520)
