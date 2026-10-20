@@ -139,7 +139,7 @@ jobs:
           sed -i '' -e "s|launchUrlString('https://rustdesk.com/privacy.html')|launchUrlString('${{ env.urlLink }}/privacy.html')|" ./flutter/lib/mobile/pages/settings_page.dart
           sed -i '' -e "s|https://rustdesk.com/privacy.html|${{ env.urlLink }}/privacy.html|" ./flutter/lib/desktop/pages/install_page.dart
           # il nome vero si controlla sul pacchetto dopo la compilazione (CFBundleName)
-          grep -q 'PRODUCT_NAME = ${{ env.appname }}' ./flutter/macos/Runner/Configs/AppInfo.xcconfig || { echo "nome non scritto in AppInfo.xcconfig"; exit 1; }
+          grep -q 'PRODUCT_NAME = ${{ env.appname }}' ./flutter/macos/Runner/Configs/AppInfo.xcconfig || { echo "::error::nome non scritto in AppInfo.xcconfig"; exit 1; }
 
       - name: change download link to custom
         if: env.downloadLink != 'https://rustdesk.com/download'
@@ -160,8 +160,8 @@ jobs:
           SERVER_KEY: ${{ env.key }}
           API_SERVER: ${{ env.apiServer }}
         run: |
-          [ -f "./libs/hbb_common/src/config.rs" ] || { echo "Error: config.rs not found!"; exit 1; }
-          [ -f "./src/common.rs" ] || { echo "Error: common.rs not found!"; exit 1; }
+          [ -f "./libs/hbb_common/src/config.rs" ] || { echo "::error::Error: config.rs not found!"; exit 1; }
+          [ -f "./src/common.rs" ] || { echo "::error::Error: common.rs not found!"; exit 1; }
           if ! [[ "$SERVER_PORT_INPUT" =~ ^[0-9]+$ ]]; then echo "Error: serverPort must be a number, got: '$SERVER_PORT_INPUT'"; exit 1; fi
           SERVER_PORT=$SERVER_PORT_INPUT
           RELAY_PORT=$((SERVER_PORT + 1))
@@ -177,19 +177,19 @@ jobs:
           sed -i '' -e "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$SERVER_KEY|" ./libs/hbb_common/src/config.rs
           sed -i '' -e "s|https://admin.rustdesk.com|$API_SERVER|" ./src/common.rs
           n=$(grep -c 'pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());' ./libs/hbb_common/src/config.rs)
-          [ "$n" = 1 ] || { echo "APP_NAME di hbb_common non trovato una sola volta ($n): sorgente cambiato"; exit 1; }
+          [ "$n" = 1 ] || { echo "::error::APP_NAME di hbb_common non trovato una sola volta ($n): sorgente cambiato"; exit 1; }
           sed -i '' -e 's|pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());|pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());|' ./libs/hbb_common/src/config.rs
-          grep -qF 'pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());' ./libs/hbb_common/src/config.rs || { echo "APP_NAME non scritto"; exit 1; }
+          grep -qF 'pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());' ./libs/hbb_common/src/config.rs || { echo "::error::APP_NAME non scritto"; exit 1; }
           echo "=== Verification ==="
           grep -nE "RENDEZVOUS_PORT|RELAY_PORT|WS_" ./libs/hbb_common/src/config.rs
-          grep -qF "$SERVER_DOMAIN" ./libs/hbb_common/src/config.rs || { echo "server non scritto"; exit 1; }
-          grep -qF "$SERVER_KEY" ./libs/hbb_common/src/config.rs || { echo "chiave non scritta"; exit 1; }
-          ! grep -qF "rs-ny.rustdesk.com" ./libs/hbb_common/src/config.rs || { echo "server di rustdesk.com ancora presente"; exit 1; }
-          ! grep -qF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" ./libs/hbb_common/src/config.rs || { echo "chiave di rustdesk.com ancora presente"; exit 1; }
-          grep -qE "pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta rendezvous non scritta"; exit 1; }
-          grep -qE "pub const RELAY_PORT: i32 = $RELAY_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta relay non scritta"; exit 1; }
-          grep -qF "$API_SERVER" ./src/common.rs || { echo "server API (rubrica) non scritto"; exit 1; }
-          ! grep -qF "https://admin.rustdesk.com" ./src/common.rs || { echo "API di rustdesk.com ancora presente"; exit 1; }
+          grep -qF "$SERVER_DOMAIN" ./libs/hbb_common/src/config.rs || { echo "::error::server non scritto"; exit 1; }
+          grep -qF "$SERVER_KEY" ./libs/hbb_common/src/config.rs || { echo "::error::chiave non scritta"; exit 1; }
+          ! grep -qF "rs-ny.rustdesk.com" ./libs/hbb_common/src/config.rs || { echo "::error::server di rustdesk.com ancora presente"; exit 1; }
+          ! grep -qF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" ./libs/hbb_common/src/config.rs || { echo "::error::chiave di rustdesk.com ancora presente"; exit 1; }
+          grep -qE "pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;" ./libs/hbb_common/src/config.rs || { echo "::error::porta rendezvous non scritta"; exit 1; }
+          grep -qE "pub const RELAY_PORT: i32 = $RELAY_PORT;" ./libs/hbb_common/src/config.rs || { echo "::error::porta relay non scritta"; exit 1; }
+          grep -qF "$API_SERVER" ./src/common.rs || { echo "::error::server API (rubrica) non scritto"; exit 1; }
+          ! grep -qF "https://admin.rustdesk.com" ./src/common.rs || { echo "::error::API di rustdesk.com ancora presente"; exit 1; }
 
       - name: grafica Informatica Gelormini (colori e riquadro contatti, variante clienti)
         shell: bash
@@ -221,7 +221,7 @@ jobs:
         run: |
           # NASM 2.16.x ufficiale (NON brew: installa la 3.x, incompatibile con aom). Impronta fissata il 20/10/2026.
           wget https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
-          [ "$(shasum -a 256 nasm-2.16.03-macosx.zip | cut -d' ' -f1)" = 0d29bcd8a5fc617333f4549c7c1f93d1866a4a0915c40359e0a8585bb1a5aa75 ] || { echo "NASM con impronta diversa da quella fissata"; exit 1; }
+          [ "$(shasum -a 256 nasm-2.16.03-macosx.zip | cut -d' ' -f1)" = 0d29bcd8a5fc617333f4549c7c1f93d1866a4a0915c40359e0a8585bb1a5aa75 ] || { echo "::error::NASM con impronta diversa da quella fissata"; exit 1; }
           unzip nasm-2.16.03-macosx.zip
           sudo cp nasm-2.16.03/nasm /usr/local/bin/nasm
           nasm --version
@@ -322,7 +322,7 @@ jobs:
         if: env.removeNewVersionNotif == 'true'
         shell: bash
         run: |
-          grep -q 'let (request, url) =' ./src/common.rs || { echo "controllo aggiornamenti non trovato in common.rs: sorgente cambiato"; exit 1; }
+          grep -q 'let (request, url) =' ./src/common.rs || { echo "::error::controllo aggiornamenti non trovato in common.rs: sorgente cambiato"; exit 1; }
           sed -i '' -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
           # stesso effetto del sed GNU di build-windows.yml ('/let (request, url) =/,/Ok(())/{/Ok(())/!d}'), che il sed del Mac non accetta
           python3 - <<'PYEOF2'
@@ -340,8 +340,8 @@ jobs:
               out.append(r)
           open(p, "w", encoding="utf-8").write("\n".join(out))
           PYEOF2
-          ! grep -q 'updateUrl.isNotEmpty' ./flutter/lib/desktop/pages/desktop_home_page.dart || { echo "avviso di aggiornamento ancora presente"; exit 1; }
-          ! grep -q 'let (request, url) =' ./src/common.rs || { echo "richiesta di aggiornamento ancora presente"; exit 1; }
+          ! grep -q 'updateUrl.isNotEmpty' ./flutter/lib/desktop/pages/desktop_home_page.dart || { echo "::error::avviso di aggiornamento ancora presente"; exit 1; }
+          ! grep -q 'let (request, url) =' ./src/common.rs || { echo "::error::richiesta di aggiornamento ancora presente"; exit 1; }
 
       - name: replace flutter icons
         shell: bash
@@ -400,7 +400,7 @@ jobs:
           cd flutter/build/macos/Build/Products/Release
           ls -la
           [ -d "RustDesk.app" ] && mv "RustDesk.app" "${{ env.appname }}.app"
-          [ -d "${{ env.appname }}.app" ] || { echo "app ${{ env.appname }}.app non trovata"; exit 1; }
+          [ -d "${{ env.appname }}.app" ] || { echo "::error::app ${{ env.appname }}.app non trovata"; exit 1; }
           xattr -cr "${{ env.appname }}.app" || true
           codesign --force --deep --sign - "${{ env.appname }}.app"
           codesign --verify --deep --strict "${{ env.appname }}.app"
@@ -412,38 +412,40 @@ jobs:
           set -e
           APP="flutter/build/macos/Build/Products/Release/${{ env.appname }}.app"
           [ -x "$APP/Contents/MacOS/${{ env.appname }}" ] || { echo "eseguibile $APP/Contents/MacOS/${{ env.appname }} assente"; ls -la "$APP/Contents/MacOS"; exit 1; }
-          [ -x "$APP/Contents/MacOS/service" ] || { echo "servizio assente nel pacchetto"; exit 1; }
+          [ -x "$APP/Contents/MacOS/service" ] || { echo "::error::servizio assente nel pacchetto"; exit 1; }
           conta() { grep -rlaF -- "$1" "$APP" | wc -l | tr -d ' '; }
-          [ "$(conta "${{ env.key }}")" -ge 1 ] || { echo "chiave NON trovata nel pacchetto"; exit 1; }
-          [ "$(conta "${{ env.server }}")" -ge 1 ] || { echo "server NON trovato nel pacchetto"; exit 1; }
-          [ "$(conta "${{ env.apiServer }}")" -ge 1 ] || { echo "server API NON trovato nel pacchetto"; exit 1; }
-          [ "$(conta "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=")" = 0 ] || { echo "chiave di rustdesk.com ANCORA presente"; exit 1; }
-          [ "$(conta "rs-ny.rustdesk.com")" = 0 ] || { echo "server di rustdesk.com ANCORA presente"; exit 1; }
-          [ "$(conta "admin.rustdesk.com")" = 0 ] || { echo "API di rustdesk.com ANCORA presente"; exit 1; }
-          [ "$(conta "GA-VERSIONE-CLIENTI")" -ge 1 ] || { echo "segno della variante clienti assente"; exit 1; }
-          [ "$(conta "GA-VERSIONE-TECNICO")" = 0 ] || { echo "segno della variante tecnico presente"; exit 1; }
+          # (come build-windows.yml: server, chiave, API e variante si guardano nella LIBRERIA Rust, i testi nella parte Dart;
+          # il pacchetto intero contiene anche file che non decidono niente, corsa 1 del 20/10 fermata qui senza dire perche')
+          echo "file in cui compaiono gli indirizzi di rustdesk.com (solo per capire): $(grep -rlaF -e rs-ny.rustdesk.com -e admin.rustdesk.com -e OeVuKk5nlHiXp -e https://rustdesk.com/download "$APP" | sed "s#^$APP/##" | tr '\n' ' ')"
           for x in "Informatica Gelormini" "Un solo referente, sempre lo stesso" "339 288 5800" "https://www.informaticagelormini.com" "https://wa.me/393392885800" "mailto:a.gelormini@informaticagelormini.com" "https://www.informaticagelormini.com/prenota/"; do
-            [ "$(conta "$x")" -ge 1 ] || { echo "testo della grafica assente nel pacchetto: $x"; exit 1; }
+            [ "$(conta "$x")" -ge 1 ] || { echo "::error::testo della grafica assente nel pacchetto: $x"; exit 1; }
           done
           for a in logo.png logo_dark.png; do
-            n=0; while IFS= read -r p; do n=$((n+1)); cmp "./ga/risorse/$a" "$p" || { echo "$p diverso dal repository"; exit 1; }; done < <(find "$APP" -path "*flutter_assets/assets/$a")
-            [ "$n" = 1 ] || { echo "$a trovato $n volte nel pacchetto invece di 1"; exit 1; }
+            n=0; while IFS= read -r p; do n=$((n+1)); cmp "./ga/risorse/$a" "$p" || { echo "::error::$p diverso dal repository"; exit 1; }; done < <(find "$APP" -path "*flutter_assets/assets/$a")
+            [ "$n" = 1 ] || { echo "::error::$a trovato $n volte nel pacchetto invece di 1"; exit 1; }
           done
-          /usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist" | grep -qx "${{ env.appname }}" || { echo "CFBundleName non e' ${{ env.appname }}"; exit 1; }
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist" | grep -qx "${{ env.appname }}" || { echo "::error::CFBundleName non e' ${{ env.appname }}"; exit 1; }
           # architettura (NEO 20/10, punto 2): eseguibile, servizio e libreria Rust devono essere quella del job
           atteso=$([ "${{ matrix.job.arch }}" = aarch64 ] && echo arm64 || echo x86_64)
           # la libreria Rust DEVE esserci (NEO 20/10 giro 2): tutte le copie, nessun troncamento
           lib=(); while IFS= read -r x; do lib+=("$x"); done < <(find "$APP" -type f \( -name 'liblibrustdesk.dylib' -o -name 'librustdesk.dylib' \))
           [ "${#lib[@]}" -ge 1 ] || { echo "libreria Rust (librustdesk.dylib) assente nel pacchetto"; find "$APP" -name '*.dylib' | head -20; exit 1; }
           for b in "$APP/Contents/MacOS/${{ env.appname }}" "$APP/Contents/MacOS/service" "${lib[@]}"; do
-            a=$(lipo -archs "$b"); echo "$b: $a"; [ "$a" = "$atteso" ] || { echo "$b e' $a invece di $atteso"; exit 1; }
+            a=$(lipo -archs "$b"); echo "$b: $a"; [ "$a" = "$atteso" ] || { echo "::error::$b e' $a invece di $atteso"; exit 1; }
           done
           # le stringhe del server devono stare nella libreria Rust, non solo "da qualche parte" nel pacchetto
-          for x in "${{ env.key }}" "${{ env.server }}" "GA-VERSIONE-CLIENTI"; do
+          for x in "${{ env.key }}" "${{ env.server }}" "${{ env.apiServer }}" "GA-VERSIONE-CLIENTI"; do
             n=0; for b in "${lib[@]}"; do grep -qaF -- "$x" "$b" && n=$((n+1)); done
-            [ "$n" -ge 1 ] || { echo "$x non trovato nella libreria Rust"; exit 1; }
+            [ "$n" -ge 1 ] || { echo "::error::$x non trovato nella libreria Rust"; exit 1; }
           done
-          [ "$(conta "https://rustdesk.com/download")" = 0 ] || { echo "collegamento di download di rustdesk.com ancora presente"; exit 1; }
+          for b in "${lib[@]}"; do
+            for x in "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" "rs-ny.rustdesk.com" "admin.rustdesk.com" "GA-VERSIONE-TECNICO"; do
+              ! grep -qaF -- "$x" "$b" || { echo "::error::$x presente nella libreria Rust $b"; exit 1; }
+            done
+          done
+          dart=(); while IFS= read -r x; do dart+=("$x"); done < <(find "$APP" -type f -name App -path '*App.framework*')
+          [ "${#dart[@]}" -ge 1 ] || { echo "::error::parte Dart (App.framework/App) assente"; exit 1; }
+          for b in "${dart[@]}"; do ! grep -qaF "https://rustdesk.com/download" "$b" || { echo "::error::collegamento di download di rustdesk.com ancora presente in $b"; exit 1; }; done
           echo "pacchetto verificato"
 
       - name: Create DMG
@@ -501,7 +503,7 @@ jobs:
         run: |
           set -e
           cd ./dmg
-          n=$(ls *.dmg | wc -l); [ "$n" = 2 ] || { echo "attesi 2 DMG, trovati $n"; exit 1; }
+          n=$(ls *.dmg | wc -l); [ "$n" = 2 ] || { echo "::error::attesi 2 DMG, trovati $n"; exit 1; }
           for f in *.dmg; do sha256sum -c "$f.sha256"; done
           sha256sum *.dmg > SHA256SUMS.txt
           cat SHA256SUMS.txt

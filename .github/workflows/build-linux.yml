@@ -139,6 +139,12 @@ jobs:
               echo "======"
               echo ""
             done
+            # i registri di GitHub non si leggono senza accesso: le righe d'errore diventano note pubbliche
+            # (NEO giro 4) dal piu' recente, un registro senza righe d'errore non ferma il giro, niente righe con parole da credenziale
+            ls -t $(find "${VCPKG_ROOT}/" -name "*.log" 2>/dev/null) 2>/dev/null | head -40 | while read -r _1; do
+              e=$( { grep -i -E 'error|fail' "$_1" || true; } | grep -v -i -E 'token|password|secret|authoriz|key' | tail -6 | tr '\n' ' ' | cut -c1-900) || true
+              [ -n "$e" ] && echo "::error::vcpkg $(basename "$_1"): $e" || true
+            done
             exit 1
           fi
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ env.vcpkg_triplet }}-rel-out.log" || true
@@ -206,8 +212,8 @@ jobs:
           SERVER_KEY: ${{ env.key }}
           API_SERVER: ${{ env.apiServer }}
         run: |
-          [ -f "./libs/hbb_common/src/config.rs" ] || { echo "Error: config.rs not found!"; exit 1; }
-          [ -f "./src/common.rs" ] || { echo "Error: common.rs not found!"; exit 1; }
+          [ -f "./libs/hbb_common/src/config.rs" ] || { echo "::error::Error: config.rs not found!"; exit 1; }
+          [ -f "./src/common.rs" ] || { echo "::error::Error: common.rs not found!"; exit 1; }
           if ! [[ "$SERVER_PORT_INPUT" =~ ^[0-9]+$ ]]; then echo "Error: serverPort must be a number, got: '$SERVER_PORT_INPUT'"; exit 1; fi
           SERVER_PORT=$SERVER_PORT_INPUT
           RELAY_PORT=$((SERVER_PORT + 1))
@@ -223,19 +229,19 @@ jobs:
           sed -i -e "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$SERVER_KEY|" ./libs/hbb_common/src/config.rs
           sed -i -e "s|https://admin.rustdesk.com|$API_SERVER|" ./src/common.rs
           n=$(grep -c 'pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());' ./libs/hbb_common/src/config.rs)
-          [ "$n" = 1 ] || { echo "APP_NAME di hbb_common non trovato una sola volta ($n): sorgente cambiato"; exit 1; }
+          [ "$n" = 1 ] || { echo "::error::APP_NAME di hbb_common non trovato una sola volta ($n): sorgente cambiato"; exit 1; }
           sed -i -e 's|pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());|pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());|' ./libs/hbb_common/src/config.rs
-          grep -qF 'pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());' ./libs/hbb_common/src/config.rs || { echo "APP_NAME non scritto"; exit 1; }
+          grep -qF 'pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());' ./libs/hbb_common/src/config.rs || { echo "::error::APP_NAME non scritto"; exit 1; }
           echo "=== Verification ==="
           grep -nE "RENDEZVOUS_PORT|RELAY_PORT|WS_" ./libs/hbb_common/src/config.rs
-          grep -qF "$SERVER_DOMAIN" ./libs/hbb_common/src/config.rs || { echo "server non scritto"; exit 1; }
-          grep -qF "$SERVER_KEY" ./libs/hbb_common/src/config.rs || { echo "chiave non scritta"; exit 1; }
-          ! grep -qF "rs-ny.rustdesk.com" ./libs/hbb_common/src/config.rs || { echo "server di rustdesk.com ancora presente"; exit 1; }
-          ! grep -qF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" ./libs/hbb_common/src/config.rs || { echo "chiave di rustdesk.com ancora presente"; exit 1; }
-          grep -qE "pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta rendezvous non scritta"; exit 1; }
-          grep -qE "pub const RELAY_PORT: i32 = $RELAY_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta relay non scritta"; exit 1; }
-          grep -qF "$API_SERVER" ./src/common.rs || { echo "server API (rubrica) non scritto"; exit 1; }
-          ! grep -qF "https://admin.rustdesk.com" ./src/common.rs || { echo "API di rustdesk.com ancora presente"; exit 1; }
+          grep -qF "$SERVER_DOMAIN" ./libs/hbb_common/src/config.rs || { echo "::error::server non scritto"; exit 1; }
+          grep -qF "$SERVER_KEY" ./libs/hbb_common/src/config.rs || { echo "::error::chiave non scritta"; exit 1; }
+          ! grep -qF "rs-ny.rustdesk.com" ./libs/hbb_common/src/config.rs || { echo "::error::server di rustdesk.com ancora presente"; exit 1; }
+          ! grep -qF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" ./libs/hbb_common/src/config.rs || { echo "::error::chiave di rustdesk.com ancora presente"; exit 1; }
+          grep -qE "pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;" ./libs/hbb_common/src/config.rs || { echo "::error::porta rendezvous non scritta"; exit 1; }
+          grep -qE "pub const RELAY_PORT: i32 = $RELAY_PORT;" ./libs/hbb_common/src/config.rs || { echo "::error::porta relay non scritta"; exit 1; }
+          grep -qF "$API_SERVER" ./src/common.rs || { echo "::error::server API (rubrica) non scritto"; exit 1; }
+          ! grep -qF "https://admin.rustdesk.com" ./src/common.rs || { echo "::error::API di rustdesk.com ancora presente"; exit 1; }
 
       - name: grafica Informatica Gelormini (colori e riquadro contatti, variante clienti)
         shell: bash
@@ -273,11 +279,11 @@ jobs:
         if: env.removeNewVersionNotif == 'true'
         shell: bash
         run: |
-          grep -q 'let (request, url) =' ./src/common.rs || { echo "controllo aggiornamenti non trovato in common.rs: sorgente cambiato"; exit 1; }
+          grep -q 'let (request, url) =' ./src/common.rs || { echo "::error::controllo aggiornamenti non trovato in common.rs: sorgente cambiato"; exit 1; }
           sed -i -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
           sed -i '/let (request, url) =/,/Ok(())/{/Ok(())/!d}' ./src/common.rs
-          ! grep -q 'updateUrl.isNotEmpty' ./flutter/lib/desktop/pages/desktop_home_page.dart || { echo "avviso di aggiornamento ancora presente"; exit 1; }
-          ! grep -q 'let (request, url) =' ./src/common.rs || { echo "richiesta di aggiornamento ancora presente"; exit 1; }
+          ! grep -q 'updateUrl.isNotEmpty' ./flutter/lib/desktop/pages/desktop_home_page.dart || { echo "::error::avviso di aggiornamento ancora presente"; exit 1; }
+          ! grep -q 'let (request, url) =' ./src/common.rs || { echo "::error::richiesta di aggiornamento ancora presente"; exit 1; }
 
       - name: logo Informatica Gelormini nelle risorse del programma
         shell: bash
@@ -349,7 +355,7 @@ jobs:
             R=rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }}.tar.gz
             wget -O rust.tar.gz https://static.rust-lang.org/dist/$R
             wget -O rust.tar.gz.sha256 https://static.rust-lang.org/dist/$R.sha256
-            [ "$(sha256sum rust.tar.gz | cut -d' ' -f1)" = "$(cut -d' ' -f1 rust.tar.gz.sha256)" ] || { echo "Rust con impronta diversa da quella pubblicata"; exit 1; }
+            [ "$(sha256sum rust.tar.gz | cut -d' ' -f1)" = "$(cut -d' ' -f1 rust.tar.gz.sha256)" ] || { echo "::error::Rust con impronta diversa da quella pubblicata"; exit 1; }
             tar -zxvf rust.tar.gz > /dev/null && rm rust.tar.gz
             cd rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }} && ./install.sh
             rm -rf rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }}
@@ -368,7 +374,7 @@ jobs:
             export PATH=/opt/flutter/bin:$PATH
             pushd /opt
             wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz
-            [ "$(sha256sum flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz | cut -d' ' -f1)" = "${{ env.FLUTTER_SHA256 }}" ] || { echo "Flutter con impronta diversa da quella fissata"; exit 1; }
+            [ "$(sha256sum flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz | cut -d' ' -f1)" = "${{ env.FLUTTER_SHA256 }}" ] || { echo "::error::Flutter con impronta diversa da quella fissata"; exit 1; }
             tar xf flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz
             flutter doctor -v || true
             if [[ "3.24.5" == ${{ env.FLUTTER_VERSION }} ]]; then
@@ -393,7 +399,7 @@ jobs:
             popd
             # pacchetto .deb STANDARD (nomi rustdesk): la rinomina in ${{ env.pkgname }} si fa dopo, fuori dal contenitore
             python3 ./build.py --flutter --skip-cargo
-            n=$(ls *.deb | wc -l); [ "$n" = 1 ] || { echo "attesi 1 .deb da build.py, trovati $n"; exit 1; }
+            n=$(ls *.deb | wc -l); [ "$n" = 1 ] || { echo "::error::attesi 1 .deb da build.py, trovati $n"; exit 1; }
             mv ./*.deb /workspace/output/rustdesk-standard.deb
             ls -l /workspace/output
 
@@ -414,26 +420,26 @@ jobs:
           X=$(mktemp -d)
           dpkg-deb -x "$D" "$X"
           P="$X/usr/share/${{ env.pkgname }}"
-          [ -x "$P/${{ env.pkgname }}" ] || { echo "eseguibile $P/${{ env.pkgname }} assente"; exit 1; }
+          [ -x "$P/${{ env.pkgname }}" ] || { echo "::error::eseguibile $P/${{ env.pkgname }} assente"; exit 1; }
           L="$P/lib/librustdesk.so"; [ -s "$L" ] || { echo "librustdesk.so assente"; ls -la "$P/lib"; exit 1; }
-          A="$P/lib/libapp.so"; [ -s "$A" ] || { echo "libapp.so (grafica) assente"; exit 1; }
-          grep -qaF "${{ env.key }}" "$L" || { echo "chiave NON trovata in librustdesk.so"; exit 1; }
-          grep -qaF "${{ env.server }}" "$L" || { echo "server NON trovato in librustdesk.so"; exit 1; }
-          grep -qaF "${{ env.apiServer }}" "$L" || { echo "server API NON trovato in librustdesk.so"; exit 1; }
-          ! grep -qaF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" "$L" || { echo "chiave di rustdesk.com ANCORA presente"; exit 1; }
-          ! grep -qaF "rs-ny.rustdesk.com" "$L" || { echo "server di rustdesk.com ANCORA presente"; exit 1; }
-          ! grep -qaF "admin.rustdesk.com" "$L" || { echo "API di rustdesk.com ANCORA presente"; exit 1; }
-          grep -qaF "GA-VERSIONE-CLIENTI" "$L" || { echo "segno della variante clienti assente"; exit 1; }
-          ! grep -qaF "GA-VERSIONE-TECNICO" "$L" || { echo "segno della variante tecnico presente"; exit 1; }
-          grep -qaF '${{ env.appname }}' "$L" || { echo "nome del programma assente in librustdesk.so"; exit 1; }
+          A="$P/lib/libapp.so"; [ -s "$A" ] || { echo "::error::libapp.so (grafica) assente"; exit 1; }
+          grep -qaF "${{ env.key }}" "$L" || { echo "::error::chiave NON trovata in librustdesk.so"; exit 1; }
+          grep -qaF "${{ env.server }}" "$L" || { echo "::error::server NON trovato in librustdesk.so"; exit 1; }
+          grep -qaF "${{ env.apiServer }}" "$L" || { echo "::error::server API NON trovato in librustdesk.so"; exit 1; }
+          ! grep -qaF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" "$L" || { echo "::error::chiave di rustdesk.com ANCORA presente"; exit 1; }
+          ! grep -qaF "rs-ny.rustdesk.com" "$L" || { echo "::error::server di rustdesk.com ANCORA presente"; exit 1; }
+          ! grep -qaF "admin.rustdesk.com" "$L" || { echo "::error::API di rustdesk.com ANCORA presente"; exit 1; }
+          grep -qaF "GA-VERSIONE-CLIENTI" "$L" || { echo "::error::segno della variante clienti assente"; exit 1; }
+          ! grep -qaF "GA-VERSIONE-TECNICO" "$L" || { echo "::error::segno della variante tecnico presente"; exit 1; }
+          grep -qaF '${{ env.appname }}' "$L" || { echo "::error::nome del programma assente in librustdesk.so"; exit 1; }
           for x in "Informatica Gelormini" "Un solo referente, sempre lo stesso" "339 288 5800" "https://www.informaticagelormini.com" "https://wa.me/393392885800" "mailto:a.gelormini@informaticagelormini.com" "https://www.informaticagelormini.com/prenota/"; do
-            grep -qaF "$x" "$A" || { echo "testo della grafica assente in libapp.so: $x"; exit 1; }
+            grep -qaF "$x" "$A" || { echo "::error::testo della grafica assente in libapp.so: $x"; exit 1; }
           done
-          for a in logo.png logo_dark.png; do cmp "./ga/risorse/$a" "$P/data/flutter_assets/assets/$a" || { echo "$a nel pacchetto diverso dal repository"; exit 1; }; done
-          ! grep -qaF "https://rustdesk.com/download" "$A" || { echo "collegamento di download di rustdesk.com ancora presente"; exit 1; }
+          for a in logo.png logo_dark.png; do cmp "./ga/risorse/$a" "$P/data/flutter_assets/assets/$a" || { echo "::error::$a nel pacchetto diverso dal repository"; exit 1; }; done
+          ! grep -qaF "https://rustdesk.com/download" "$A" || { echo "::error::collegamento di download di rustdesk.com ancora presente"; exit 1; }
           K=$(mktemp -d); dpkg-deb -e "$D" "$K"
-          [ -s "$K/preinst" ] || { echo "preinst assente nel pacchetto"; exit 1; }
-          ! grep -q libsciter "$K/preinst" || { echo "preinst cancella ancora /usr/bin/libsciter-gtk.so"; exit 1; }
+          [ -s "$K/preinst" ] || { echo "::error::preinst assente nel pacchetto"; exit 1; }
+          ! grep -q libsciter "$K/preinst" || { echo "::error::preinst cancella ancora /usr/bin/libsciter-gtk.so"; exit 1; }
           echo "pacchetto verificato"
 
       - name: Prova d'installazione sulla macchina di GitHub (servizio attivo, poi tolto)
@@ -447,18 +453,18 @@ jobs:
           sudo apt-get install -y "$D"
           sleep 10
           systemctl is-active ${{ env.pkgname }} || { sudo journalctl -u ${{ env.pkgname }} --no-pager | tail -40; exit 1; }
-          readlink -f /usr/bin/${{ env.pkgname }} | grep -qx "/usr/share/${{ env.pkgname }}/${{ env.pkgname }}" || { echo "collegamento /usr/bin non giusto"; exit 1; }
-          pgrep -a -f "${{ env.pkgname }} --service" || { echo "processo del servizio assente"; exit 1; }
+          readlink -f /usr/bin/${{ env.pkgname }} | grep -qx "/usr/share/${{ env.pkgname }}/${{ env.pkgname }}" || { echo "::error::collegamento /usr/bin non giusto"; exit 1; }
+          pgrep -a -f "${{ env.pkgname }} --service" || { echo "::error::processo del servizio assente"; exit 1; }
           sudo apt-get purge -y ${{ env.pkgname }}
           sleep 3
           # (NEO 20/10, punto 3) controlli che possono fallire solo per il motivo che dicono
-          s=$(systemctl show -p LoadState --value ${{ env.pkgname }}); [ "$s" = not-found ] || { echo "unita' ${{ env.pkgname }} ancora presente: $s"; exit 1; }
-          a=$(systemctl show -p ActiveState --value ${{ env.pkgname }}); [ "$a" = inactive ] || { echo "servizio non inattivo dopo la rimozione: $a"; exit 1; }
+          s=$(systemctl show -p LoadState --value ${{ env.pkgname }}); [ "$s" = not-found ] || { echo "::error::unita' ${{ env.pkgname }} ancora presente: $s"; exit 1; }
+          a=$(systemctl show -p ActiveState --value ${{ env.pkgname }}); [ "$a" = inactive ] || { echo "::error::servizio non inattivo dopo la rimozione: $a"; exit 1; }
           for p in /usr/bin/${{ env.pkgname }} /usr/share/${{ env.pkgname }} /usr/share/applications/${{ env.pkgname }}.desktop /usr/share/applications/${{ env.pkgname }}-link.desktop /usr/lib/systemd/system/${{ env.pkgname }}.service; do
-            [ ! -e "$p" ] && [ ! -L "$p" ] || { echo "$p rimasto dopo la rimozione"; exit 1; }
+            [ ! -e "$p" ] && [ ! -L "$p" ] || { echo "::error::$p rimasto dopo la rimozione"; exit 1; }
           done
           # processi avviati da QUALUNQUE percorso (/usr/bin o /usr/share): si cerca il nome del programma seguito da " --"
-          ! pgrep -a -f "${{ env.pkgname }} --" || { echo "processi rimasti dopo la rimozione"; exit 1; }
+          ! pgrep -a -f "${{ env.pkgname }} --" || { echo "::error::processi rimasti dopo la rimozione"; exit 1; }
           echo "installazione, servizio e rimozione verificati (unita', collegamento, cartella, desktop, processi)"
 
       - name: Impronta e caricamento per la pubblicazione
