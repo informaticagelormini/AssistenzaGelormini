@@ -170,6 +170,8 @@ jobs:
           ls -t "$VCPKG_ROOT/buildtrees/$porta/"*.log 2>/dev/null | head -6 | while read -r f; do
             nota "vcpkg $porta $(basename "$f")" "$(tail -n 25 "$f")"
           done
+          # un passo di sola diagnosi: l'esito del job lo decide il passo vcpkg, non questo (NEO giro 5, punto 3)
+          exit 0
 
       - name: icon stuff
         shell: bash

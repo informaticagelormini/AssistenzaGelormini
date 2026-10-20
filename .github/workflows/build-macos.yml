@@ -414,12 +414,18 @@ jobs:
           APP="flutter/build/macos/Build/Products/Release/${{ env.appname }}.app"
           [ -x "$APP/Contents/MacOS/${{ env.appname }}" ] || { echo "eseguibile $APP/Contents/MacOS/${{ env.appname }} assente"; ls -la "$APP/Contents/MacOS"; exit 1; }
           [ -x "$APP/Contents/MacOS/service" ] || { echo "::error::servizio assente nel pacchetto"; exit 1; }
-          conta() { grep -rlaF -- "$1" "$APP" | wc -l | tr -d ' '; }
-          # (come build-windows.yml: server, chiave, API e variante si guardano nella LIBRERIA Rust, i testi nella parte Dart;
-          # il pacchetto intero contiene anche file che non decidono niente, corsa 1 del 20/10 fermata qui senza dire perche')
-          echo "file in cui compaiono gli indirizzi di rustdesk.com (solo per capire): $(grep -rlaF -e rs-ny.rustdesk.com -e admin.rustdesk.com -e OeVuKk5nlHiXp -e https://rustdesk.com/download "$APP" | sed "s#^$APP/##" | tr '\n' ' ')"
+          # conteggi ESATTI in byte, con Python (corsa 3, 21/10: il grep del Mac non trovava nella parte Dart da 13 MB un testo che c'era,
+          # misurato dal passo di diagnosi "Un solo referente"=1; lo stesso grep faceva i controlli "non deve contenere", che passavano
+          # anche senza guardare). Come build-windows.yml: server, chiave, API e variante nella LIBRERIA Rust, i testi nella parte Dart.
+          conta() {  # conta <file> <testo>: mette in N il numero di occorrenze; se il file non si legge si ferma
+            N=$(python3 -c 'import sys; print(open(sys.argv[1], "rb").read().count(sys.argv[2].encode()))' "$1" "$2") || { echo "::error::lettura di $1 non riuscita"; exit 1; }
+            case "$N" in ''|*[!0-9]*) echo "::error::conteggio non numerico su $1"; exit 1;; esac
+          }
+          dart=(); while IFS= read -r x; do dart+=("$x"); done < <(find "$APP" -type f -name App -path '*App.framework*')
+          [ "${#dart[@]}" -ge 1 ] || { echo "::error::parte Dart (App.framework/App) assente"; exit 1; }
           for x in "Informatica Gelormini" "Un solo referente, sempre lo stesso" "339 288 5800" "https://www.informaticagelormini.com" "https://wa.me/393392885800" "mailto:a.gelormini@informaticagelormini.com" "https://www.informaticagelormini.com/prenota/"; do
-            [ "$(conta "$x")" -ge 1 ] || { echo "::error::testo della grafica assente nel pacchetto: $x"; exit 1; }
+            t=0; for b in "${dart[@]}"; do conta "$b" "$x"; t=$((t + N)); done
+            [ "$t" -ge 1 ] || { echo "::error::testo della grafica assente nella parte Dart: $x"; exit 1; }
           done
           for a in logo.png logo_dark.png; do
             n=0; while IFS= read -r p; do n=$((n+1)); cmp "./ga/risorse/$a" "$p" || { echo "::error::$p diverso dal repository"; exit 1; }; done < <(find "$APP" -path "*flutter_assets/assets/$a")
@@ -436,17 +442,15 @@ jobs:
           done
           # le stringhe del server devono stare nella libreria Rust, non solo "da qualche parte" nel pacchetto
           for x in "${{ env.key }}" "${{ env.server }}" "${{ env.apiServer }}" "GA-VERSIONE-CLIENTI"; do
-            n=0; for b in "${lib[@]}"; do grep -qaF -- "$x" "$b" && n=$((n+1)); done
-            [ "$n" -ge 1 ] || { echo "::error::$x non trovato nella libreria Rust"; exit 1; }
+            t=0; for b in "${lib[@]}"; do conta "$b" "$x"; t=$((t + N)); done
+            [ "$t" -ge 1 ] || { echo "::error::$x non trovato nella libreria Rust"; exit 1; }
           done
           for b in "${lib[@]}"; do
             for x in "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" "rs-ny.rustdesk.com" "admin.rustdesk.com" "GA-VERSIONE-TECNICO"; do
-              ! grep -qaF -- "$x" "$b" || { echo "::error::$x presente nella libreria Rust $b"; exit 1; }
+              conta "$b" "$x"; [ "$N" = 0 ] || { echo "::error::$x presente nella libreria Rust $b"; exit 1; }
             done
           done
-          dart=(); while IFS= read -r x; do dart+=("$x"); done < <(find "$APP" -type f -name App -path '*App.framework*')
-          [ "${#dart[@]}" -ge 1 ] || { echo "::error::parte Dart (App.framework/App) assente"; exit 1; }
-          for b in "${dart[@]}"; do ! grep -qaF "https://rustdesk.com/download" "$b" || { echo "::error::collegamento di download di rustdesk.com ancora presente in $b"; exit 1; }; done
+          for b in "${dart[@]}"; do conta "$b" "https://rustdesk.com/download"; [ "$N" = 0 ] || { echo "::error::collegamento di download di rustdesk.com ancora presente in $b"; exit 1; }; done
           echo "pacchetto verificato"
 
       # corsa 2 (21/10): "testo della grafica assente nel pacchetto: Un solo referente, sempre lo stesso" su un pacchetto costruito
@@ -476,7 +480,10 @@ jobs:
                   p = os.path.join(base, f)
                   if os.path.islink(p) or not os.path.isfile(p):
                       continue
-                  b = open(p, "rb").read()
+                  try:
+                      b = open(p, "rb").read()
+                  except OSError as e:
+                      nota("non leggibile: %s (%s)" % (p[len(app) + 1:], e.strerror)); continue
                   if b"Gelormini" in b:
                       dove.append(p[len(app) + 1:])
                   if f == "App" and "App.framework" in p:
@@ -488,7 +495,8 @@ jobs:
               conti = ", ".join("%s=%d/utf16:%d" % (t.decode(), b.count(t), b.count(t.decode().encode("utf-16-le"))) for t in testi)
               nota("%s: %d byte; %s" % (p[len(app) + 1:], len(b), conti))
               righe = [m.group().decode() for m in re.finditer(rb"[\x20-\x7e]{5,}", b)
-                       if re.search(rb"Gelormini|referente|WhatsApp|Antonio|Prenota|Scrivici", m.group())]
+                       if re.search(rb"Gelormini|referente|WhatsApp|Antonio|Prenota|Scrivici", m.group())
+                       and not re.search(rb"(?i)token|password|secret|authoriz|key|credential", m.group())]
               nota("stringhe leggibili col nome (%d): %s" % (len(righe), " | ".join(righe[:15])))
           PYEOF
 
