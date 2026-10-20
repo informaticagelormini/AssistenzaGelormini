@@ -1,0 +1,512 @@
+# AssistenzaGelormini - programma CLIENTI per Mac (chip Apple e Intel), stesso server e stessa grafica di quello per Windows.
+# Ricavato dal workflow generator-macos.yml di rdgen (https://github.com/bryangerlach/rdgen, GPL-3.0),
+# commit 0e83379858ec4a2ecb8a4f832b0db5de8ab605aa, con le stesse differenze di build-windows.yml: nessun server rdgen (valori qui
+# sotto, non segreti), icona e logo dal repository, patch copiate in .github/patches, passo del server SENZA continue-on-error e
+# verificato, grafica e variante clienti da ga_grafica.py, controlli sui file prodotti, Release del repository.
+# Niente firma Apple (il tecnico non ha l'account sviluppatore, 20/10/2026): firma ad-hoc come rdgen; al primo avvio il cliente
+# apre l'app col tasto destro -> Apri. Sorgente di RustDesk: https://github.com/rustdesk/rustdesk (AGPL-3.0).
+name: Compila AssistenzaGelormini (Mac, clienti)
+run-name: Compila AssistenzaGelormini (Mac, clienti)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  MAC_RUST_VERSION: "1.81"
+  LLVM_VERSION: "15.0.6"
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  # vcpkg version: 2024.07.12
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  # Versione di RustDesk: si cambia QUI e nel "version:" del job generate-bridge (stesso valore), come per Windows
+  VERSION: "1.5.0"
+  # --- personalizzazione (valori pubblici, identici a build-windows.yml) ---
+  appname: "AssistenzaGelormini"
+  filename: "AssistenzaGelormini"
+  compname: "Informatica Gelormini"
+  urlLink: "https://www.informaticagelormini.com"
+  downloadLink: "https://www.informaticagelormini.com"
+  server: "remote.ga-informatica.com"
+  serverPort: "21216"
+  # chiave PUBBLICA del server nuovo (/opt/rustdesk/data/id_ed25519.pub dal 20/10/2026, generata il 14/10/2026 13:15)
+  key: "FwpTqHoFEGwdidg9vyOY4MI3VihRtA9vagno+Uad0M0="
+  apiServer: "http://100.97.211.33:21114"
+  removeNewVersionNotif: "true"
+
+jobs:
+  generate-bridge:
+    uses: ./.github/workflows/bridge.yml
+    with:
+      version: "1.5.0"
+
+  build-for-macos:
+    name: ${{ matrix.job.target }}
+    runs-on: ${{ matrix.job.os }}
+    needs: [generate-bridge]
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          - {
+              target: x86_64-apple-darwin,
+              os: macos-15-intel,
+              extra-build-args: "",
+              arch: x86_64,
+              nome: Intel,
+              vcpkg-triplet: x64-osx,
+            }
+          - {
+              target: aarch64-apple-darwin,
+              os: macos-14,
+              extra-build-args: "--screencapturekit",
+              arch: aarch64,
+              nome: ChipApple,
+              vcpkg-triplet: arm64-osx,
+            }
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          repository: rustdesk/rustdesk
+          ref: refs/tags/${{ env.VERSION }}
+          submodules: recursive
+
+      - name: Checkout di questo repository (icona, logo, patch) in ./ga
+        uses: actions/checkout@v4
+        with:
+          path: ga
+
+      - name: Controllo chiave pubblica
+        shell: bash
+        run: |
+          if [ "${{ env.key }}" = "CHIAVE_PUBBLICA_DA_METTERE" ] || [ ${#key} -ne 44 ]; then echo "chiave pubblica non impostata"; exit 1; fi
+
+      - name: Install imagemagick and potrace and nasm and and
+        shell: bash
+        run: |
+          brew install imagemagick potrace cmake gcc wget ninja
+          echo "$(brew --prefix imagemagick)/bin" >> $GITHUB_PATH
+
+      - name: Update macOS Info.plist and settings
+        shell: bash
+        run: |
+          set -e
+          # (rdgen qui cambiava Info.plist con tre sed che non trovano niente: chiave e valore stanno su due righe e il valore e'
+          # $(PRODUCT_NAME)/$(PRODUCT_BUNDLE_IDENTIFIER): misurato sul sorgente 1.5.0 il 20/10. Il nome viene da AppInfo.xcconfig.)
+          # MACSTUFF Update AppInfo.xcconfig
+          sed -i '' -e 's|PRODUCT_NAME = .*|PRODUCT_NAME = ${{ env.appname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
+          sed -i '' -e 's|PRODUCT_BUNDLE_IDENTIFIER = .*|PRODUCT_BUNDLE_IDENTIFIER = com.${{ env.appname }}.app|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
+          sed -i '' -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
+          sed -i '' -e 's|Purslane Ltd.|${{ env.compname }}|' ./flutter/macos/Runner/Configs/AppInfo.xcconfig
+
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./Cargo.toml
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./src/main.rs
+          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./Cargo.toml
+          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
+          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i -e 's|Purslane Ltd|${{ env.compname }}|' ./src/main.rs
+
+          # Update Xcode project settings
+          sed -i '' -e 's/PRODUCT_NAME = "RustDesk"/PRODUCT_NAME = "${{ env.appname }}"/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
+          sed -i '' -e 's/PRODUCT_BUNDLE_IDENTIFIER = ".*"/PRODUCT_BUNDLE_IDENTIFIER = "com.${{ env.appname }}.app"/' ./flutter/macos/Runner.xcodeproj/project.pbxproj
+
+          if [ -f "./flutter/macos/CMakeLists.txt" ]; then
+            sed -i '' -e 's/set(BINARY_NAME ".*")/set(BINARY_NAME "${{ env.appname }}")/' ./flutter/macos/CMakeLists.txt
+          fi
+
+          # come build-windows.yml: "powered by" col nome della ditta, poi il nome del programma nelle lingue
+          find ./src/lang -name "*.rs" -exec sed -i '' -e '/powered_by_me/s|RustDesk|${{ env.compname }}|g' {} \;
+          find ./src/lang -name "*.rs" -exec sed -i '' -e 's|RustDesk|${{ env.appname }}|' {} \;
+
+          sed -i '' -e 's|https://rustdesk.com|${{ env.urlLink }}|' ./build.py
+          sed -i '' -e "s|launchUrl(Uri.parse('https://rustdesk.com'));|launchUrl(Uri.parse('${{ env.urlLink }}'));|" ./flutter/lib/common.dart
+          sed -i '' -e "s|launchUrlString('https://rustdesk.com');|launchUrlString('${{ env.urlLink }}');|" ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i '' -e "s|launchUrlString('https://rustdesk.com/privacy.html')|launchUrlString('${{ env.urlLink }}/privacy.html')|" ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i '' -e "s|const url = 'https://rustdesk.com/';|const url = '${{ env.urlLink }}';|" ./flutter/lib/mobile/pages/settings_page.dart
+          sed -i '' -e "s|launchUrlString('https://rustdesk.com/privacy.html')|launchUrlString('${{ env.urlLink }}/privacy.html')|" ./flutter/lib/mobile/pages/settings_page.dart
+          sed -i '' -e "s|https://rustdesk.com/privacy.html|${{ env.urlLink }}/privacy.html|" ./flutter/lib/desktop/pages/install_page.dart
+          # il nome vero si controlla sul pacchetto dopo la compilazione (CFBundleName)
+          grep -q 'PRODUCT_NAME = ${{ env.appname }}' ./flutter/macos/Runner/Configs/AppInfo.xcconfig || { echo "nome non scritto in AppInfo.xcconfig"; exit 1; }
+
+      - name: change download link to custom
+        if: env.downloadLink != 'https://rustdesk.com/download'
+        continue-on-error: true
+        shell: bash
+        run: |
+          sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./flutter/lib/desktop/pages/desktop_home_page.dart
+          sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./flutter/lib/mobile/pages/connection_page.dart
+          sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./src/ui/index.tis
+          sed -i -e 's|&download_url|"${{ env.downloadLink }}"|' ./src/updater.rs
+          sed -i -e 's|$downloadUrl/$downloadFile|${{ env.downloadLink }}|' ./flutter/lib/desktop/widgets/update_progress.dart
+
+      - name: set server, serverPort, key, and apiserver
+        shell: bash
+        env:
+          SERVER_DOMAIN: ${{ env.server }}
+          SERVER_PORT_INPUT: ${{ env.serverPort }}
+          SERVER_KEY: ${{ env.key }}
+          API_SERVER: ${{ env.apiServer }}
+        run: |
+          [ -f "./libs/hbb_common/src/config.rs" ] || { echo "Error: config.rs not found!"; exit 1; }
+          [ -f "./src/common.rs" ] || { echo "Error: common.rs not found!"; exit 1; }
+          if ! [[ "$SERVER_PORT_INPUT" =~ ^[0-9]+$ ]]; then echo "Error: serverPort must be a number, got: '$SERVER_PORT_INPUT'"; exit 1; fi
+          SERVER_PORT=$SERVER_PORT_INPUT
+          RELAY_PORT=$((SERVER_PORT + 1))
+          WS_RENDEZVOUS_PORT=$((RELAY_PORT + 1))
+          WS_RELAY_PORT=$((WS_RENDEZVOUS_PORT + 1))
+          echo "Setting server: $SERVER_DOMAIN"
+          echo "Setting ports: $SERVER_PORT, $RELAY_PORT, $WS_RENDEZVOUS_PORT, $WS_RELAY_PORT"
+          sed -i '' -e "s|rs-ny.rustdesk.com|$SERVER_DOMAIN|" ./libs/hbb_common/src/config.rs
+          sed -i '' -e "s|pub const RENDEZVOUS_PORT: i32 = [0-9][0-9]*;|pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i '' -e "s|pub const RELAY_PORT: i32 = [0-9][0-9]*;|pub const RELAY_PORT: i32 = $RELAY_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i '' -e "s|pub const WS_RENDEZVOUS_PORT: i32 = [0-9][0-9]*;|pub const WS_RENDEZVOUS_PORT: i32 = $WS_RENDEZVOUS_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i '' -e "s|pub const WS_RELAY_PORT: i32 = [0-9][0-9]*;|pub const WS_RELAY_PORT: i32 = $WS_RELAY_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i '' -e "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$SERVER_KEY|" ./libs/hbb_common/src/config.rs
+          sed -i '' -e "s|https://admin.rustdesk.com|$API_SERVER|" ./src/common.rs
+          n=$(grep -c 'pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());' ./libs/hbb_common/src/config.rs)
+          [ "$n" = 1 ] || { echo "APP_NAME di hbb_common non trovato una sola volta ($n): sorgente cambiato"; exit 1; }
+          sed -i '' -e 's|pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());|pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());|' ./libs/hbb_common/src/config.rs
+          grep -qF 'pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());' ./libs/hbb_common/src/config.rs || { echo "APP_NAME non scritto"; exit 1; }
+          echo "=== Verification ==="
+          grep -nE "RENDEZVOUS_PORT|RELAY_PORT|WS_" ./libs/hbb_common/src/config.rs
+          grep -qF "$SERVER_DOMAIN" ./libs/hbb_common/src/config.rs || { echo "server non scritto"; exit 1; }
+          grep -qF "$SERVER_KEY" ./libs/hbb_common/src/config.rs || { echo "chiave non scritta"; exit 1; }
+          ! grep -qF "rs-ny.rustdesk.com" ./libs/hbb_common/src/config.rs || { echo "server di rustdesk.com ancora presente"; exit 1; }
+          ! grep -qF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" ./libs/hbb_common/src/config.rs || { echo "chiave di rustdesk.com ancora presente"; exit 1; }
+          grep -qE "pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta rendezvous non scritta"; exit 1; }
+          grep -qE "pub const RELAY_PORT: i32 = $RELAY_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta relay non scritta"; exit 1; }
+          grep -qF "$API_SERVER" ./src/common.rs || { echo "server API (rubrica) non scritto"; exit 1; }
+          ! grep -qF "https://admin.rustdesk.com" ./src/common.rs || { echo "API di rustdesk.com ancora presente"; exit 1; }
+
+      - name: grafica Informatica Gelormini (colori e riquadro contatti, variante clienti)
+        shell: bash
+        run: python3 ./ga/.github/patches/ga_grafica.py clienti
+
+      - name: remove setup server tip
+        shell: bash
+        run: |
+          # Remove Setup Server Tip (patch copiata da rdgen 0e83379858ec)
+          git apply ./ga/.github/patches/removeSetupServerTip.diff
+
+      - name: logo Informatica Gelormini nelle risorse del programma
+        shell: bash
+        run: |
+          set -e
+          # (rdgen copiava il logo DOPO la compilazione in una cartella che il pacchetto non usa: qui va nelle risorse prima)
+          for f in logo.png logo_dark.png; do cp "./ga/risorse/$f" "./flutter/assets/$f"; cmp "./ga/risorse/$f" "./flutter/assets/$f"; done
+
+      - name: Install build runtime
+        run: |
+          brew install llvm create-dmg
+          if command -v pkg-config &>/dev/null; then
+              echo "pkg-config is already installed"
+          else
+              brew install pkg-config
+          fi
+
+      - name: Install NASM
+        run: |
+          # NASM 2.16.x ufficiale (NON brew: installa la 3.x, incompatibile con aom). Impronta fissata il 20/10/2026.
+          wget https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
+          [ "$(shasum -a 256 nasm-2.16.03-macosx.zip | cut -d' ' -f1)" = 0d29bcd8a5fc617333f4549c7c1f93d1866a4a0915c40359e0a8585bb1a5aa75 ] || { echo "NASM con impronta diversa da quella fissata"; exit 1; }
+          unzip nasm-2.16.03-macosx.zip
+          sudo cp nasm-2.16.03/nasm /usr/local/bin/nasm
+          nasm --version
+
+      - name: Install flutter
+        uses: subosito/flutter-action@2783a3f08e1baf891508463f8c6653c258246225 # v2.12.0
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch flutter
+        shell: bash
+        run: |
+          cp .github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff $(dirname $(dirname $(which flutter)))
+          cd $(dirname $(dirname $(which flutter)))
+          if [[ "3.24.5" == ${{env.FLUTTER_VERSION}} ]]; then
+            git apply flutter_3.24.4_dropdown_menu_enableFilter.diff
+          fi
+
+      - name: Workaround for flutter issue
+        shell: bash
+        run: |
+          cd "$(dirname "$(which flutter)")"
+          # https://github.com/flutter/flutter/issues/133533
+          sed -i -e 's/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g' ../packages/flutter/lib/src/scheduler/binding.dart
+          grep -n '_setFramesEnabledState(false);' ../packages/flutter/lib/src/scheduler/binding.dart
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 al 20/10/2026
+        with:
+          toolchain: ${{ env.MAC_RUST_VERSION }}
+          targets: ${{ matrix.job.target }}
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2 al 20/10/2026
+        with:
+          prefix-key: ${{ matrix.job.os }}
+
+      - name: Magick stuff for macOS
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ./res ./flutter/assets ./flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset
+          cp ./ga/risorse/icona.png ./res/icon.png
+          magick ./res/icon.png -resize 32x32 ./res/32x32.png
+          magick ./res/icon.png -resize 64x64 ./res/64x64.png
+          magick ./res/icon.png -resize 128x128 ./res/128x128.png
+          magick ./res/icon.png -resize 256x256 ./res/128x128@2x.png
+          # icona vettoriale (potrace) come rdgen
+          magick ./res/icon.png -flatten ./temp_icon.pbm
+          potrace --svg -o ./flutter/assets/icon.svg ./temp_icon.pbm
+          rm ./temp_icon.pbm
+          A=flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset
+          for s in 16 32 64 128 256 512 1024; do magick ./res/icon.png -resize ${s}x${s} "$A/app_icon_$s.png"; done
+          magick ./res/icon.png -resize 128x128 ./res/mac-icon.png
+          magick ./res/icon.png -resize 22x22 -colorspace gray -alpha set -background none -channel A -evaluate set 100% ./res/mac-tray-dark-x2.png
+          magick ./res/icon.png -resize 22x22 -negate -colorspace gray -alpha set -background none -channel A -evaluate set 100% ./res/mac-tray-light-x2.png
+          mkdir -p ./iconset.iconset
+          cp "$A/app_icon_16.png" ./iconset.iconset/icon_16x16.png
+          cp "$A/app_icon_32.png" ./iconset.iconset/icon_16x16@2x.png
+          cp "$A/app_icon_32.png" ./iconset.iconset/icon_32x32.png
+          cp "$A/app_icon_64.png" ./iconset.iconset/icon_32x32@2x.png
+          cp "$A/app_icon_128.png" ./iconset.iconset/icon_128x128.png
+          cp "$A/app_icon_256.png" ./iconset.iconset/icon_128x128@2x.png
+          cp "$A/app_icon_256.png" ./iconset.iconset/icon_256x256.png
+          cp "$A/app_icon_512.png" ./iconset.iconset/icon_256x256@2x.png
+          cp "$A/app_icon_512.png" ./iconset.iconset/icon_512x512.png
+          cp "$A/app_icon_1024.png" ./iconset.iconset/icon_512x512@2x.png
+          iconutil -c icns ./iconset.iconset -o ./flutter/macos/Runner/AppIcon.icns
+          rm -rf ./iconset.iconset
+          echo '{
+            "images": [
+              {"size":"16x16","idiom":"mac","filename":"app_icon_16.png","scale":"1x"},
+              {"size":"16x16","idiom":"mac","filename":"app_icon_32.png","scale":"2x"},
+              {"size":"32x32","idiom":"mac","filename":"app_icon_32.png","scale":"1x"},
+              {"size":"32x32","idiom":"mac","filename":"app_icon_64.png","scale":"2x"},
+              {"size":"128x128","idiom":"mac","filename":"app_icon_128.png","scale":"1x"},
+              {"size":"128x128","idiom":"mac","filename":"app_icon_256.png","scale":"2x"},
+              {"size":"256x256","idiom":"mac","filename":"app_icon_256.png","scale":"1x"},
+              {"size":"256x256","idiom":"mac","filename":"app_icon_512.png","scale":"2x"},
+              {"size":"512x512","idiom":"mac","filename":"app_icon_512.png","scale":"1x"},
+              {"size":"512x512","idiom":"mac","filename":"app_icon_1024.png","scale":"2x"}
+            ],
+            "info": {"version": 1, "author": "xcode"}
+          }' > "$A/Contents.json"
+          ls -lh ./res/mac-tray-dark-x2.png ./res/mac-tray-light-x2.png ./res/mac-icon.png "$A"
+
+      - name: ui.rs icon
+        continue-on-error: true
+        shell: bash
+        run: |
+          cp ./src/ui.rs ./src/ui.rs.bak
+          b64=$(base64 < ./res/icon.png | tr -d '\n')
+          perl -0777 -pe "s|iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHL[A-Za-z0-9+/=]+|$b64|g" -i.bak ./src/ui.rs
+          b64=""
+
+      - name: removeNewVersionNotif
+        if: env.removeNewVersionNotif == 'true'
+        shell: bash
+        run: |
+          grep -q 'let (request, url) =' ./src/common.rs || { echo "controllo aggiornamenti non trovato in common.rs: sorgente cambiato"; exit 1; }
+          sed -i '' -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
+          # stesso effetto del sed GNU di build-windows.yml ('/let (request, url) =/,/Ok(())/{/Ok(())/!d}'), che il sed del Mac non accetta
+          python3 - <<'PYEOF2'
+          p = "./src/common.rs"
+          righe = open(p, encoding="utf-8").read().split("\n")
+          out, dentro = [], False
+          for r in righe:
+              if not dentro and "let (request, url) =" in r:
+                  dentro = True
+              if dentro:
+                  if "Ok(())" in r:
+                      dentro = False
+                      out.append(r)
+                  continue
+              out.append(r)
+          open(p, "w", encoding="utf-8").write("\n".join(out))
+          PYEOF2
+          ! grep -q 'updateUrl.isNotEmpty' ./flutter/lib/desktop/pages/desktop_home_page.dart || { echo "avviso di aggiornamento ancora presente"; exit 1; }
+          ! grep -q 'let (request, url) =' ./src/common.rs || { echo "richiesta di aggiornamento ancora presente"; exit 1; }
+
+      - name: replace flutter icons
+        shell: bash
+        run: |
+          cd ./flutter
+          cp ../res/mac-icon.png ./assets/icon.png
+          flutter pub get
+          flutter pub run flutter_launcher_icons
+          cd ..
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          if ! $VCPKG_ROOT/vcpkg \
+            install \
+            --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
+              echo "$_1:"
+              echo "======"
+              cat "$_1"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+          head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ matrix.job.vcpkg-triplet }}-rel-out.log" || true
+
+      - name: Build rustdesk
+        run: |
+          set -e
+          if [ "${{ matrix.job.target }}" = "aarch64-apple-darwin" ]; then
+            MIN_MACOS_VERSION="12.3"
+            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET\=[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}/" build.py
+            sed -i -e "s/platform :osx, '.*'/platform :osx, '${MIN_MACOS_VERSION}'/" flutter/macos/Podfile
+            sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN_MACOS_VERSION}\"/" Cargo.toml
+            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN_MACOS_VERSION};/" flutter/macos/Runner.xcodeproj/project.pbxproj
+          fi
+          sed -i -e "s/RustDesk.app/\"${{ env.appname }}.app\"/" build.py
+          ./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}
+
+      - name: Ad-hoc Sign macOS app bundle
+        shell: bash
+        run: |
+          set -e
+          cd flutter/build/macos/Build/Products/Release
+          ls -la
+          [ -d "RustDesk.app" ] && mv "RustDesk.app" "${{ env.appname }}.app"
+          [ -d "${{ env.appname }}.app" ] || { echo "app ${{ env.appname }}.app non trovata"; exit 1; }
+          xattr -cr "${{ env.appname }}.app" || true
+          codesign --force --deep --sign - "${{ env.appname }}.app"
+          codesign --verify --deep --strict "${{ env.appname }}.app"
+          echo "firma ad-hoc fatta e verificata"
+
+      - name: Verifica del pacchetto (server e chiave dentro, niente rustdesk.com, grafica, variante clienti)
+        shell: bash
+        run: |
+          set -e
+          APP="flutter/build/macos/Build/Products/Release/${{ env.appname }}.app"
+          [ -x "$APP/Contents/MacOS/${{ env.appname }}" ] || { echo "eseguibile $APP/Contents/MacOS/${{ env.appname }} assente"; ls -la "$APP/Contents/MacOS"; exit 1; }
+          [ -x "$APP/Contents/MacOS/service" ] || { echo "servizio assente nel pacchetto"; exit 1; }
+          conta() { grep -rlaF -- "$1" "$APP" | wc -l | tr -d ' '; }
+          [ "$(conta "${{ env.key }}")" -ge 1 ] || { echo "chiave NON trovata nel pacchetto"; exit 1; }
+          [ "$(conta "${{ env.server }}")" -ge 1 ] || { echo "server NON trovato nel pacchetto"; exit 1; }
+          [ "$(conta "${{ env.apiServer }}")" -ge 1 ] || { echo "server API NON trovato nel pacchetto"; exit 1; }
+          [ "$(conta "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=")" = 0 ] || { echo "chiave di rustdesk.com ANCORA presente"; exit 1; }
+          [ "$(conta "rs-ny.rustdesk.com")" = 0 ] || { echo "server di rustdesk.com ANCORA presente"; exit 1; }
+          [ "$(conta "admin.rustdesk.com")" = 0 ] || { echo "API di rustdesk.com ANCORA presente"; exit 1; }
+          [ "$(conta "GA-VERSIONE-CLIENTI")" -ge 1 ] || { echo "segno della variante clienti assente"; exit 1; }
+          [ "$(conta "GA-VERSIONE-TECNICO")" = 0 ] || { echo "segno della variante tecnico presente"; exit 1; }
+          for x in "Informatica Gelormini" "Un solo referente, sempre lo stesso" "339 288 5800" "https://www.informaticagelormini.com" "https://wa.me/393392885800" "mailto:a.gelormini@informaticagelormini.com" "https://www.informaticagelormini.com/prenota/"; do
+            [ "$(conta "$x")" -ge 1 ] || { echo "testo della grafica assente nel pacchetto: $x"; exit 1; }
+          done
+          for a in logo.png logo_dark.png; do
+            n=0; while IFS= read -r p; do n=$((n+1)); cmp "./ga/risorse/$a" "$p" || { echo "$p diverso dal repository"; exit 1; }; done < <(find "$APP" -path "*flutter_assets/assets/$a")
+            [ "$n" = 1 ] || { echo "$a trovato $n volte nel pacchetto invece di 1"; exit 1; }
+          done
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist" | grep -qx "${{ env.appname }}" || { echo "CFBundleName non e' ${{ env.appname }}"; exit 1; }
+          # architettura (NEO 20/10, punto 2): eseguibile, servizio e libreria Rust devono essere quella del job
+          atteso=$([ "${{ matrix.job.arch }}" = aarch64 ] && echo arm64 || echo x86_64)
+          # la libreria Rust DEVE esserci (NEO 20/10 giro 2): tutte le copie, nessun troncamento
+          lib=(); while IFS= read -r x; do lib+=("$x"); done < <(find "$APP" -type f \( -name 'liblibrustdesk.dylib' -o -name 'librustdesk.dylib' \))
+          [ "${#lib[@]}" -ge 1 ] || { echo "libreria Rust (librustdesk.dylib) assente nel pacchetto"; find "$APP" -name '*.dylib' | head -20; exit 1; }
+          for b in "$APP/Contents/MacOS/${{ env.appname }}" "$APP/Contents/MacOS/service" "${lib[@]}"; do
+            a=$(lipo -archs "$b"); echo "$b: $a"; [ "$a" = "$atteso" ] || { echo "$b e' $a invece di $atteso"; exit 1; }
+          done
+          # le stringhe del server devono stare nella libreria Rust, non solo "da qualche parte" nel pacchetto
+          for x in "${{ env.key }}" "${{ env.server }}" "GA-VERSIONE-CLIENTI"; do
+            n=0; for b in "${lib[@]}"; do grep -qaF -- "$x" "$b" && n=$((n+1)); done
+            [ "$n" -ge 1 ] || { echo "$x non trovato nella libreria Rust"; exit 1; }
+          done
+          [ "$(conta "https://rustdesk.com/download")" = 0 ] || { echo "collegamento di download di rustdesk.com ancora presente"; exit 1; }
+          echo "pacchetto verificato"
+
+      - name: Create DMG
+        shell: bash
+        run: |
+          set -e
+          cd flutter/build/macos/Build/Products/Release
+          D="${{ env.filename }}-Cliente-Mac-${{ matrix.job.nome }}.dmg"
+          create-dmg \
+            --volname "${{ env.appname }}" \
+            --window-pos 200 120 \
+            --window-size 800 400 \
+            --icon-size 100 \
+            --icon "${{ env.appname }}.app" 200 190 \
+            --hide-extension "${{ env.appname }}.app" \
+            --app-drop-link 600 185 \
+            "$D" \
+            "${{ env.appname }}.app"
+          mv "$D" $GITHUB_WORKSPACE/
+          # il DMG deve contenere l'app verificata: si monta e si confronta l'eseguibile
+          M=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$M" "$GITHUB_WORKSPACE/$D"
+          # tutta l'app, non solo l'eseguibile (NEO 20/10, punto 1)
+          diff -r "$M/${{ env.appname }}.app" "${{ env.appname }}.app" > /dev/null || { hdiutil detach "$M"; echo "app nel DMG diversa da quella verificata"; exit 1; }
+          hdiutil detach "$M"
+          cd $GITHUB_WORKSPACE
+          shasum -a 256 "$D" | tee "$D.sha256"
+
+      - name: Carica il DMG per la pubblicazione
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.job.nome }}
+          path: |
+            ${{ env.filename }}-Cliente-Mac-${{ matrix.job.nome }}.dmg
+            ${{ env.filename }}-Cliente-Mac-${{ matrix.job.nome }}.dmg.sha256
+          if-no-files-found: error
+
+  pubblica:
+    permissions:
+      contents: write
+    needs: [build-for-macos]
+    runs-on: ubuntu-latest
+    # si pubblica solo da main (una corsa manuale su un altro ramo compila e verifica, ma non pubblica)
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dmg-*
+          merge-multiple: true
+          path: ./dmg
+      - name: Impronte e Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cd ./dmg
+          n=$(ls *.dmg | wc -l); [ "$n" = 2 ] || { echo "attesi 2 DMG, trovati $n"; exit 1; }
+          for f in *.dmg; do sha256sum -c "$f.sha256"; done
+          sha256sum *.dmg > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          tag="v${{ env.VERSION }}-clienti-mac-${{ github.run_number }}"
+          gh release create "$tag" *.dmg SHA256SUMS.txt --latest=false \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "AssistenzaGelormini per i CLIENTI, Mac ${{ env.VERSION }} (compilazione ${{ github.run_number }})" \
+            --notes "Programma clienti per Mac: ChipApple = Mac con chip Apple (M1 e successivi), Intel = Mac con processore Intel. Server ${{ env.server }}:${{ env.serverPort }}. Senza firma Apple: al primo avvio tasto destro sull'app -> Apri. Sorgente: rustdesk/rustdesk tag ${{ env.VERSION }} + questo repository (commit ${{ github.sha }}). Licenza AGPL-3.0."

@@ -1,0 +1,504 @@
+# AssistenzaGelormini - programma CLIENTI per Linux (pacchetto .deb x86_64: Ubuntu, Debian, Mint), stesso server e stessa grafica
+# di quello per Windows. Ricavato dal job build-rustdesk-linux (x86_64) di generator-linux.yml di rdgen
+# (https://github.com/bryangerlach/rdgen, GPL-3.0), commit 0e83379858ec4a2ecb8a4f832b0db5de8ab605aa, con le stesse differenze di
+# build-windows.yml (niente server rdgen, icona e logo dal repository, server verificato, grafica e variante clienti da
+# ga_grafica.py, controlli, Release) e in piu': il pacchetto si rinomina DOPO build.py con .github/patches/ga_rinomina_deb.py (nome
+# tutto minuscolo, quello che il codice Linux di RustDesk usa per servizio, .desktop e processo dell'icona), Flutter e Rust
+# scaricati con l'impronta controllata, prova d'installazione vera sulla macchina di GitHub (servizio attivo, poi tolto).
+# Sorgente di RustDesk: https://github.com/rustdesk/rustdesk (AGPL-3.0).
+name: Compila AssistenzaGelormini (Linux, clienti)
+run-name: Compila AssistenzaGelormini (Linux, clienti)
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RUST_VERSION: "1.75"
+  FLUTTER_VERSION: "3.24.5"
+  # impronta pubblicata da Flutter (releases_linux.json) per flutter_linux_3.24.5-stable.tar.xz, letta il 20/10/2026
+  FLUTTER_SHA256: "a7c82f551a9eae018e078f6bb186171e5a77920d35a3d75a61d9a593d0a9e4ae"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  # vcpkg version: 2024.07.12
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  # Versione di RustDesk: si cambia QUI e nel "version:" del job generate-bridge (stesso valore), come per Windows
+  VERSION: "1.5.0"
+  # --- personalizzazione (valori pubblici, identici a build-windows.yml) ---
+  appname: "AssistenzaGelormini"
+  # nome del pacchetto e dei file: get_app_name().to_lowercase() di src/platform/linux.rs
+  pkgname: "assistenzagelormini"
+  filename: "AssistenzaGelormini"
+  compname: "Informatica Gelormini"
+  urlLink: "https://www.informaticagelormini.com"
+  downloadLink: "https://www.informaticagelormini.com"
+  server: "remote.ga-informatica.com"
+  serverPort: "21216"
+  # chiave PUBBLICA del server nuovo (/opt/rustdesk/data/id_ed25519.pub dal 20/10/2026, generata il 14/10/2026 13:15)
+  key: "FwpTqHoFEGwdidg9vyOY4MI3VihRtA9vagno+Uad0M0="
+  apiServer: "http://100.97.211.33:21114"
+  removeNewVersionNotif: "true"
+
+jobs:
+  generate-bridge-linux:
+    uses: ./.github/workflows/bridge.yml
+    with:
+      version: "1.5.0"
+
+  build-rustdesk-linux:
+    needs: [generate-bridge-linux]
+    name: build rustdesk linux x86_64
+    runs-on: ubuntu-22.04
+    env:
+      arch: x86_64
+      target: x86_64-unknown-linux-gnu
+      distro: ubuntu18.04
+      deb_arch: amd64
+      vcpkg_triplet: x64-linux
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Maximize build space
+        run: |
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo apt-get update -y
+          sudo apt-get install -y nasm qemu-user-static imagemagick
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          repository: rustdesk/rustdesk
+          ref: refs/tags/${{ env.VERSION }}
+          submodules: recursive
+
+      - name: Checkout di questo repository (icona, logo, patch) in ./ga
+        uses: actions/checkout@v4
+        with:
+          path: ga
+
+      - name: Controllo chiave pubblica
+        shell: bash
+        run: |
+          if [ "${{ env.key }}" = "CHIAVE_PUBBLICA_DA_METTERE" ] || [ ${#key} -ne 44 ]; then echo "chiave pubblica non impostata"; exit 1; fi
+
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@fc79b3f67fa8a838184ce84a674ca12238d2c761 # master al 20/10/2026
+        with:
+          swap-size-gb: 12
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 al 20/10/2026
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ env.target }}
+          components: "rustfmt"
+
+      - name: Save Rust toolchain version
+        run: |
+          RUST_TOOLCHAIN_VERSION=$(cargo --version | awk '{print $2}')
+          echo "RUST_TOOLCHAIN_VERSION=$RUST_TOOLCHAIN_VERSION" >> $GITHUB_ENV
+
+      - name: Disable rust bridge build
+        run: |
+          # only build cdylib
+          sed -i  "s/\[\"cdylib\", \"staticlib\", \"rlib\"\]/\[\"cdylib\"\]/g" Cargo.toml
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgDirectory: /opt/artifacts/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          sudo apt install -y libva-dev && apt show libva-dev
+          if ! $VCPKG_ROOT/vcpkg \
+            install \
+            --triplet ${{ env.vcpkg_triplet }} \
+            --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
+              echo "$_1:"
+              echo "======"
+              cat "$_1"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+          head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ env.vcpkg_triplet }}-rel-out.log" || true
+        shell: bash
+
+      - name: icon stuff
+        shell: bash
+        run: |
+          set -e
+          mv ./res/icon.ico ./res/icon.ico.bak
+          mv ./res/icon.png ./res/icon.png.bak
+          mv ./res/tray-icon.ico ./res/tray-icon.ico.bak
+          cp ./ga/risorse/icona.png ./res/icon.png
+          mv ./res/32x32.png ./res/32x32.png.bak
+          mv ./res/64x64.png ./res/64x64.png.bak
+          mv ./res/128x128.png ./res/128x128.png.bak
+          mv ./res/128x128@2x.png ./res/128x128@2x.png.bak
+          convert ./res/icon.png -define icon:auto-resize=256,64,48,32,16 ./res/icon.ico
+          cp ./res/icon.ico ./res/tray-icon.ico
+          convert ./res/icon.png -resize 32x32 ./res/32x32.png
+          convert ./res/icon.png -resize 64x64 ./res/64x64.png
+          convert ./res/icon.png -resize 128x128 ./res/128x128.png
+          convert ./res/icon.png -resize 256x256 ./res/128x128@2x.png
+          cp ./src/ui.rs ./src/ui.rs.bak
+          b64=$(base64 -w0 < ./res/icon.png)
+          perl -0777 -pe "s|iVBORw0KGgoAAAANSUhEUgAAAIAAAACACAYAAADDPmHL[A-Za-z0-9+/=]+|$b64|g" -i.bak ./src/ui.rs
+          b64=""
+
+      - name: change appname to custom
+        if: env.appname != 'rustdesk'
+        continue-on-error: true
+        shell: bash
+        run: |
+          sed -i -e 's|description = "RustDesk Remote Desktop"|description = "${{ env.appname }}"|' ./Cargo.toml
+          sed -i -e 's|ProductName = "RustDesk"|ProductName = "${{ env.appname }}"|' ./Cargo.toml
+          sed -i -e 's|FileDescription = "RustDesk Remote Desktop"|FileDescription = "${{ env.appname }}"|' ./Cargo.toml
+          sed -i -e 's|description = "RustDesk Remote Desktop"|description = "${{ env.appname }}"|' ./libs/portable/Cargo.toml
+          sed -i -e 's|ProductName = "RustDesk"|ProductName = "${{ env.appname }}"|' ./libs/portable/Cargo.toml
+          sed -i -e 's|FileDescription = "RustDesk Remote Desktop"|FileDescription = "${{ env.appname }}"|' ./libs/portable/Cargo.toml
+          sed -i -e 's|const APP_PREFIX: \&str = "rustdesk";|const APP_PREFIX: \&str = "${{ env.appname }}";|' ./libs/portable/src/main.rs
+          find ./src/lang -name "*.rs" -exec sed -i '/powered_by_me/s|RustDesk|${{ env.compname }}|g' {} \;
+          find ./src/lang -name "*.rs" -exec sed -i -e 's|RustDesk|${{ env.appname }}|' {} \;
+
+      - name: change company name
+        if: env.compname != 'Purslane Ltd'
+        continue-on-error: true
+        shell: bash
+        run: |
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./Cargo.toml
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./src/ui/index.tis
+          sed -i -e 's|Purslane Tech Pte. Ltd.|${{ env.compname }}|' ./src/main.rs
+          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./Cargo.toml
+          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./libs/portable/Cargo.toml
+          sed -i -e 's|Purslane Ltd.|${{ env.compname }}|' ./src/ui/index.tis
+          sed -i -e 's|Purslane Ltd|${{ env.compname }}|' ./src/main.rs
+
+      - name: set server, serverPort, key, and apiserver
+        shell: bash
+        env:
+          SERVER_DOMAIN: ${{ env.server }}
+          SERVER_PORT_INPUT: ${{ env.serverPort }}
+          SERVER_KEY: ${{ env.key }}
+          API_SERVER: ${{ env.apiServer }}
+        run: |
+          [ -f "./libs/hbb_common/src/config.rs" ] || { echo "Error: config.rs not found!"; exit 1; }
+          [ -f "./src/common.rs" ] || { echo "Error: common.rs not found!"; exit 1; }
+          if ! [[ "$SERVER_PORT_INPUT" =~ ^[0-9]+$ ]]; then echo "Error: serverPort must be a number, got: '$SERVER_PORT_INPUT'"; exit 1; fi
+          SERVER_PORT=$SERVER_PORT_INPUT
+          RELAY_PORT=$((SERVER_PORT + 1))
+          WS_RENDEZVOUS_PORT=$((RELAY_PORT + 1))
+          WS_RELAY_PORT=$((WS_RENDEZVOUS_PORT + 1))
+          echo "Setting server: $SERVER_DOMAIN"
+          echo "Setting ports: $SERVER_PORT, $RELAY_PORT, $WS_RENDEZVOUS_PORT, $WS_RELAY_PORT"
+          sed -i -e "s|rs-ny.rustdesk.com|$SERVER_DOMAIN|" ./libs/hbb_common/src/config.rs
+          sed -i -e "s|pub const RENDEZVOUS_PORT: i32 = [0-9][0-9]*;|pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i -e "s|pub const RELAY_PORT: i32 = [0-9][0-9]*;|pub const RELAY_PORT: i32 = $RELAY_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i -e "s|pub const WS_RENDEZVOUS_PORT: i32 = [0-9][0-9]*;|pub const WS_RENDEZVOUS_PORT: i32 = $WS_RENDEZVOUS_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i -e "s|pub const WS_RELAY_PORT: i32 = [0-9][0-9]*;|pub const WS_RELAY_PORT: i32 = $WS_RELAY_PORT;|" ./libs/hbb_common/src/config.rs
+          sed -i -e "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$SERVER_KEY|" ./libs/hbb_common/src/config.rs
+          sed -i -e "s|https://admin.rustdesk.com|$API_SERVER|" ./src/common.rs
+          n=$(grep -c 'pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());' ./libs/hbb_common/src/config.rs)
+          [ "$n" = 1 ] || { echo "APP_NAME di hbb_common non trovato una sola volta ($n): sorgente cambiato"; exit 1; }
+          sed -i -e 's|pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());|pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());|' ./libs/hbb_common/src/config.rs
+          grep -qF 'pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());' ./libs/hbb_common/src/config.rs || { echo "APP_NAME non scritto"; exit 1; }
+          echo "=== Verification ==="
+          grep -nE "RENDEZVOUS_PORT|RELAY_PORT|WS_" ./libs/hbb_common/src/config.rs
+          grep -qF "$SERVER_DOMAIN" ./libs/hbb_common/src/config.rs || { echo "server non scritto"; exit 1; }
+          grep -qF "$SERVER_KEY" ./libs/hbb_common/src/config.rs || { echo "chiave non scritta"; exit 1; }
+          ! grep -qF "rs-ny.rustdesk.com" ./libs/hbb_common/src/config.rs || { echo "server di rustdesk.com ancora presente"; exit 1; }
+          ! grep -qF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" ./libs/hbb_common/src/config.rs || { echo "chiave di rustdesk.com ancora presente"; exit 1; }
+          grep -qE "pub const RENDEZVOUS_PORT: i32 = $SERVER_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta rendezvous non scritta"; exit 1; }
+          grep -qE "pub const RELAY_PORT: i32 = $RELAY_PORT;" ./libs/hbb_common/src/config.rs || { echo "porta relay non scritta"; exit 1; }
+          grep -qF "$API_SERVER" ./src/common.rs || { echo "server API (rubrica) non scritto"; exit 1; }
+          ! grep -qF "https://admin.rustdesk.com" ./src/common.rs || { echo "API di rustdesk.com ancora presente"; exit 1; }
+
+      - name: grafica Informatica Gelormini (colori e riquadro contatti, variante clienti)
+        shell: bash
+        run: python3 ./ga/.github/patches/ga_grafica.py clienti
+
+      - name: remove setup server tip
+        shell: bash
+        run: |
+          # Remove Setup Server Tip (patch copiata da rdgen 0e83379858ec)
+          git apply ./ga/.github/patches/removeSetupServerTip.diff
+
+      - name: change url to custom
+        if: env.urlLink != 'https://rustdesk.com'
+        continue-on-error: true
+        shell: bash
+        run: |
+          sed -i -e 's|Homepage: https://rustdesk.com|Homepage: ${{ env.urlLink }}|' ./build.py
+          sed -i -e "s|launchUrl(Uri.parse('https://rustdesk.com'));|launchUrl(Uri.parse('${{ env.urlLink }}'));|" ./flutter/lib/common.dart
+          sed -i -e "s|launchUrlString('https://rustdesk.com');|launchUrlString('${{ env.urlLink }}');|" ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i -e "s|launchUrlString('https://rustdesk.com/privacy.html')|launchUrlString('${{ env.urlLink }}/privacy.html')|" ./flutter/lib/desktop/pages/desktop_setting_page.dart
+          sed -i -e "s|const url = 'https://rustdesk.com/';|const url = '${{ env.urlLink }}';|" ./flutter/lib/mobile/pages/settings_page.dart
+          sed -i -e "s|launchUrlString('https://rustdesk.com/privacy.html')|launchUrlString('${{ env.urlLink }}/privacy.html')|" ./flutter/lib/mobile/pages/settings_page.dart
+          sed -i -e "s|https://rustdesk.com/privacy.html|${{ env.urlLink }}/privacy.html|" ./flutter/lib/desktop/pages/install_page.dart
+
+      - name: change download link to custom
+        if: env.downloadLink != 'https://rustdesk.com/download'
+        continue-on-error: true
+        shell: bash
+        run: |
+          sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./flutter/lib/desktop/pages/desktop_home_page.dart
+          sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./flutter/lib/mobile/pages/connection_page.dart
+          sed -i -e 's|https://rustdesk.com/download|${{ env.downloadLink }}|' ./src/ui/index.tis
+
+      - name: removeNewVersionNotif
+        if: env.removeNewVersionNotif == 'true'
+        shell: bash
+        run: |
+          grep -q 'let (request, url) =' ./src/common.rs || { echo "controllo aggiornamenti non trovato in common.rs: sorgente cambiato"; exit 1; }
+          sed -i -e 's|updateUrl.isNotEmpty|false|' ./flutter/lib/desktop/pages/desktop_home_page.dart
+          sed -i '/let (request, url) =/,/Ok(())/{/Ok(())/!d}' ./src/common.rs
+          ! grep -q 'updateUrl.isNotEmpty' ./flutter/lib/desktop/pages/desktop_home_page.dart || { echo "avviso di aggiornamento ancora presente"; exit 1; }
+          ! grep -q 'let (request, url) =' ./src/common.rs || { echo "richiesta di aggiornamento ancora presente"; exit 1; }
+
+      - name: logo Informatica Gelormini nelle risorse del programma
+        shell: bash
+        run: |
+          set -e
+          for f in logo.png logo_dark.png; do cp "./ga/risorse/$f" "./flutter/assets/$f"; cmp "./ga/risorse/$f" "./flutter/assets/$f"; done
+
+      - uses: rustdesk-org/run-on-arch-action@d3fcfbb632b84cf7f6bc772bfaaa2c2f4f8789a8
+        name: Build rustdesk
+        id: vcpkg
+        with:
+          arch: ${{ env.arch }}
+          distro: ${{ env.distro }}
+          githubToken: ${{ github.token }}
+          setup: |
+            ls -l "${PWD}"
+            ls -l /opt/artifacts/vcpkg/installed
+          dockerRunArgs: |
+            --volume "${PWD}:/workspace"
+            --volume "/opt/artifacts:/opt/artifacts"
+          shell: /bin/bash
+          install: |
+            apt-get update -y
+            echo -e "installing deps"
+            apt-get install -y \
+               build-essential \
+               clang \
+               cmake \
+               curl \
+               gcc \
+               git \
+               g++ \
+               imagemagick \
+               libayatana-appindicator3-dev \
+               libasound2-dev \
+               libclang-10-dev \
+               libgstreamer1.0-dev \
+               libgstreamer-plugins-base1.0-dev \
+               libgtk-3-dev \
+               libpam0g-dev \
+               libpulse-dev \
+               libva-dev \
+               libxcb-randr0-dev \
+               libxcb-shape0-dev \
+               libxcb-xfixes0-dev \
+               libxdo-dev \
+               libxfixes-dev \
+               llvm-10-dev \
+               nasm \
+               ninja-build \
+               pkg-config \
+               tree \
+               python3 \
+               rpm \
+               unzip \
+               wget \
+               xz-utils \
+               libssl-dev
+            # we have libopus compiled by us.
+            apt-get remove -y libopus-dev || true
+            ls -l ./
+            tree -L 3 /opt/artifacts/vcpkg/installed
+          run: |
+            set -e
+            # disable git safe.directory
+            git config --global --add safe.directory "*"
+            # rust (niente rustup: come rdgen); l'archivio si controlla con l'impronta pubblicata accanto
+            pushd /opt
+            R=rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }}.tar.gz
+            wget -O rust.tar.gz https://static.rust-lang.org/dist/$R
+            wget -O rust.tar.gz.sha256 https://static.rust-lang.org/dist/$R.sha256
+            [ "$(sha256sum rust.tar.gz | cut -d' ' -f1)" = "$(cut -d' ' -f1 rust.tar.gz.sha256)" ] || { echo "Rust con impronta diversa da quella pubblicata"; exit 1; }
+            tar -zxvf rust.tar.gz > /dev/null && rm rust.tar.gz
+            cd rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }} && ./install.sh
+            rm -rf rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }}
+            mkdir -p ~/.cargo/
+            echo """
+              [source.crates-io]
+              registry = 'https://github.com/rust-lang/crates.io-index'
+            """ > ~/.cargo/config
+            cat ~/.cargo/config
+            # start build
+            pushd /workspace
+            export VCPKG_ROOT=/opt/artifacts/vcpkg
+            cargo build --lib --features hwcodec,flutter,unix-file-copy-paste --release
+            rm -rf target/release/deps target/release/build
+            rm -rf ~/.cargo
+            export PATH=/opt/flutter/bin:$PATH
+            pushd /opt
+            wget https://storage.googleapis.com/flutter_infra_release/releases/stable/linux/flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz
+            [ "$(sha256sum flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz | cut -d' ' -f1)" = "${{ env.FLUTTER_SHA256 }}" ] || { echo "Flutter con impronta diversa da quella fissata"; exit 1; }
+            tar xf flutter_linux_${{ env.FLUTTER_VERSION }}-stable.tar.xz
+            flutter doctor -v || true
+            if [[ "3.24.5" == ${{ env.FLUTTER_VERSION }} ]]; then
+              pushd /opt/flutter
+              git apply /workspace/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+              popd
+            fi
+            # build flutter
+            pushd /workspace
+            mkdir output
+            chmod 777 output -R
+            export CARGO_INCREMENTAL=0
+            export DEB_ARCH=${{ env.deb_arch }}
+            # icona come rdgen (svg dalla png, icone di flutter_launcher_icons)
+            mv ./flutter/assets/icon.svg ./flutter/assets/icon.svg.bak
+            convert ./res/icon.png ./flutter/assets/icon.svg
+            convert ./res/128x128.png -resize 200% ./flutter/assets/128x128@2x.png || true
+            cp ./flutter/assets/icon.svg ./res/scalable.svg
+            pushd ./flutter
+            flutter pub get
+            dart run flutter_launcher_icons
+            popd
+            # pacchetto .deb STANDARD (nomi rustdesk): la rinomina in ${{ env.pkgname }} si fa dopo, fuori dal contenitore
+            python3 ./build.py --flutter --skip-cargo
+            n=$(ls *.deb | wc -l); [ "$n" = 1 ] || { echo "attesi 1 .deb da build.py, trovati $n"; exit 1; }
+            mv ./*.deb /workspace/output/rustdesk-standard.deb
+            ls -l /workspace/output
+
+      - name: Rinomina il pacchetto in ${{ env.pkgname }}
+        shell: bash
+        run: |
+          set -e
+          sudo chown -R "$(id -u):$(id -g)" ./output
+          python3 ./ga/.github/patches/ga_rinomina_deb.py ./output/rustdesk-standard.deb "./output/${{ env.filename }}-Cliente-Linux-x86_64.deb" \
+            "${{ env.pkgname }}" "${{ env.appname }}" "${{ env.compname }}" "${{ env.urlLink }}"
+          dpkg-deb -I "./output/${{ env.filename }}-Cliente-Linux-x86_64.deb"
+
+      - name: Verifica del pacchetto (server e chiave dentro, niente rustdesk.com, grafica, variante clienti, logo)
+        shell: bash
+        run: |
+          set -e
+          D="./output/${{ env.filename }}-Cliente-Linux-x86_64.deb"
+          X=$(mktemp -d)
+          dpkg-deb -x "$D" "$X"
+          P="$X/usr/share/${{ env.pkgname }}"
+          [ -x "$P/${{ env.pkgname }}" ] || { echo "eseguibile $P/${{ env.pkgname }} assente"; exit 1; }
+          L="$P/lib/librustdesk.so"; [ -s "$L" ] || { echo "librustdesk.so assente"; ls -la "$P/lib"; exit 1; }
+          A="$P/lib/libapp.so"; [ -s "$A" ] || { echo "libapp.so (grafica) assente"; exit 1; }
+          grep -qaF "${{ env.key }}" "$L" || { echo "chiave NON trovata in librustdesk.so"; exit 1; }
+          grep -qaF "${{ env.server }}" "$L" || { echo "server NON trovato in librustdesk.so"; exit 1; }
+          grep -qaF "${{ env.apiServer }}" "$L" || { echo "server API NON trovato in librustdesk.so"; exit 1; }
+          ! grep -qaF "OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=" "$L" || { echo "chiave di rustdesk.com ANCORA presente"; exit 1; }
+          ! grep -qaF "rs-ny.rustdesk.com" "$L" || { echo "server di rustdesk.com ANCORA presente"; exit 1; }
+          ! grep -qaF "admin.rustdesk.com" "$L" || { echo "API di rustdesk.com ANCORA presente"; exit 1; }
+          grep -qaF "GA-VERSIONE-CLIENTI" "$L" || { echo "segno della variante clienti assente"; exit 1; }
+          ! grep -qaF "GA-VERSIONE-TECNICO" "$L" || { echo "segno della variante tecnico presente"; exit 1; }
+          grep -qaF '${{ env.appname }}' "$L" || { echo "nome del programma assente in librustdesk.so"; exit 1; }
+          for x in "Informatica Gelormini" "Un solo referente, sempre lo stesso" "339 288 5800" "https://www.informaticagelormini.com" "https://wa.me/393392885800" "mailto:a.gelormini@informaticagelormini.com" "https://www.informaticagelormini.com/prenota/"; do
+            grep -qaF "$x" "$A" || { echo "testo della grafica assente in libapp.so: $x"; exit 1; }
+          done
+          for a in logo.png logo_dark.png; do cmp "./ga/risorse/$a" "$P/data/flutter_assets/assets/$a" || { echo "$a nel pacchetto diverso dal repository"; exit 1; }; done
+          ! grep -qaF "https://rustdesk.com/download" "$A" || { echo "collegamento di download di rustdesk.com ancora presente"; exit 1; }
+          K=$(mktemp -d); dpkg-deb -e "$D" "$K"
+          [ -s "$K/preinst" ] || { echo "preinst assente nel pacchetto"; exit 1; }
+          ! grep -q libsciter "$K/preinst" || { echo "preinst cancella ancora /usr/bin/libsciter-gtk.so"; exit 1; }
+          echo "pacchetto verificato"
+
+      - name: Prova d'installazione sulla macchina di GitHub (servizio attivo, poi tolto)
+        shell: bash
+        run: |
+          set -e
+          D="$PWD/output/${{ env.filename }}-Cliente-Linux-x86_64.deb"
+          # il server vero non si deve vedere da qui: niente apparecchi finti nella rubrica del server
+          echo "127.0.0.1 ${{ env.server }}" | sudo tee -a /etc/hosts
+          sudo apt-get update -y
+          sudo apt-get install -y "$D"
+          sleep 10
+          systemctl is-active ${{ env.pkgname }} || { sudo journalctl -u ${{ env.pkgname }} --no-pager | tail -40; exit 1; }
+          readlink -f /usr/bin/${{ env.pkgname }} | grep -qx "/usr/share/${{ env.pkgname }}/${{ env.pkgname }}" || { echo "collegamento /usr/bin non giusto"; exit 1; }
+          pgrep -a -f "${{ env.pkgname }} --service" || { echo "processo del servizio assente"; exit 1; }
+          sudo apt-get purge -y ${{ env.pkgname }}
+          sleep 3
+          # (NEO 20/10, punto 3) controlli che possono fallire solo per il motivo che dicono
+          s=$(systemctl show -p LoadState --value ${{ env.pkgname }}); [ "$s" = not-found ] || { echo "unita' ${{ env.pkgname }} ancora presente: $s"; exit 1; }
+          a=$(systemctl show -p ActiveState --value ${{ env.pkgname }}); [ "$a" = inactive ] || { echo "servizio non inattivo dopo la rimozione: $a"; exit 1; }
+          for p in /usr/bin/${{ env.pkgname }} /usr/share/${{ env.pkgname }} /usr/share/applications/${{ env.pkgname }}.desktop /usr/share/applications/${{ env.pkgname }}-link.desktop /usr/lib/systemd/system/${{ env.pkgname }}.service; do
+            [ ! -e "$p" ] && [ ! -L "$p" ] || { echo "$p rimasto dopo la rimozione"; exit 1; }
+          done
+          # processi avviati da QUALUNQUE percorso (/usr/bin o /usr/share): si cerca il nome del programma seguito da " --"
+          ! pgrep -a -f "${{ env.pkgname }} --" || { echo "processi rimasti dopo la rimozione"; exit 1; }
+          echo "installazione, servizio e rimozione verificati (unita', collegamento, cartella, desktop, processi)"
+
+      - name: Impronta e caricamento per la pubblicazione
+        shell: bash
+        run: |
+          cd ./output
+          sha256sum "${{ env.filename }}-Cliente-Linux-x86_64.deb" | tee "${{ env.filename }}-Cliente-Linux-x86_64.deb.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-x86_64
+          path: |
+            ./output/${{ env.filename }}-Cliente-Linux-x86_64.deb
+            ./output/${{ env.filename }}-Cliente-Linux-x86_64.deb.sha256
+          if-no-files-found: error
+
+  pubblica:
+    permissions:
+      contents: write
+    needs: [build-rustdesk-linux]
+    runs-on: ubuntu-latest
+    # si pubblica solo da main
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deb-x86_64
+          path: ./deb
+      - name: Impronte e Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cd ./deb
+          sha256sum -c *.sha256
+          sha256sum *.deb > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+          tag="v${{ env.VERSION }}-clienti-linux-${{ github.run_number }}"
+          gh release create "$tag" *.deb SHA256SUMS.txt --latest=false \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" \
+            --title "AssistenzaGelormini per i CLIENTI, Linux ${{ env.VERSION }} (compilazione ${{ github.run_number }})" \
+            --notes "Programma clienti per Linux, pacchetto .deb a 64 bit (Ubuntu, Debian, Mint): sudo apt install ./${{ env.filename }}-Cliente-Linux-x86_64.deb. Server ${{ env.server }}:${{ env.serverPort }}. Sorgente: rustdesk/rustdesk tag ${{ env.VERSION }} + questo repository (commit ${{ github.sha }}). Licenza AGPL-3.0."
