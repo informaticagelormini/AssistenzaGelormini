@@ -51,11 +51,14 @@ jobs:
     needs: [generate-bridge-linux]
     name: build rustdesk linux x86_64
     runs-on: ubuntu-22.04
+    # nomi con ga_ davanti: "target" nell'ambiente entra nel make di libvpx (ifeq ($(target),) / include $(target)-$(TOOLCHAIN).mk)
+    # e vcpkg si fermava su "make -j5" (corse 1 e 2, 21/10; riprodotto qui su libvpx 1.15.2: con target nell'ambiente
+    # "No rule to make target x86_64-unknown-linux-gnu-generic-gnu.mk", senza 161 compilazioni). La matrice di RustDesk non li esporta.
     env:
-      arch: x86_64
-      target: x86_64-unknown-linux-gnu
-      distro: ubuntu18.04
-      deb_arch: amd64
+      ga_arch: x86_64
+      ga_target: x86_64-unknown-linux-gnu
+      ga_distro: ubuntu18.04
+      ga_deb_arch: amd64
       vcpkg_triplet: x64-linux
     steps:
       - name: Export GitHub Actions cache environment variables
@@ -99,7 +102,7 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1 al 20/10/2026
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          targets: ${{ env.target }}
+          targets: ${{ env.ga_target }}
           components: "rustfmt"
 
       - name: Save Rust toolchain version
@@ -126,12 +129,14 @@ jobs:
           doNotCache: false
 
       - name: Install vcpkg dependencies
+        id: vcpkg_install
         run: |
+          set -o pipefail
           sudo apt install -y libva-dev && apt show libva-dev
           if ! $VCPKG_ROOT/vcpkg \
             install \
             --triplet ${{ env.vcpkg_triplet }} \
-            --x-install-root="$VCPKG_ROOT/installed"; then
+            --x-install-root="$VCPKG_ROOT/installed" 2>&1 | tee "$RUNNER_TEMP/vcpkg-console.txt"; then
             find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
               echo "$_1:"
               echo "======"
@@ -139,16 +144,32 @@ jobs:
               echo "======"
               echo ""
             done
-            # i registri di GitHub non si leggono senza accesso: le righe d'errore diventano note pubbliche
-            # (NEO giro 4) dal piu' recente, un registro senza righe d'errore non ferma il giro, niente righe con parole da credenziale
-            ls -t $(find "${VCPKG_ROOT}/" -name "*.log" 2>/dev/null) 2>/dev/null | head -40 | while read -r _1; do
-              e=$( { grep -i -E 'error|fail' "$_1" || true; } | grep -v -i -E 'token|password|secret|authoriz|key' | tail -6 | tr '\n' ' ' | cut -c1-900) || true
-              [ -n "$e" ] && echo "::error::vcpkg $(basename "$_1"): $e" || true
-            done
             exit 1
           fi
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-${{ env.vcpkg_triplet }}-rel-out.log" || true
         shell: bash
+
+      # i registri di GitHub non si leggono senza accesso, e le 10 note d'errore del passo sopra le consumano gli avvisi del compilatore
+      # (corsa 2, 21/10): qui, in un passo a parte con le sue 10 note, il riepilogo di vcpkg e la coda dei registri del pacchetto fallito.
+      # Una nota per riga sola, niente righe con parole da credenziale.
+      - name: Motivo dell'errore di vcpkg in note pubbliche
+        if: failure() && steps.vcpkg_install.outcome == 'failure'
+        shell: bash
+        run: |
+          set +e +o pipefail
+          nota() {
+            local t
+            t=$(printf '%s\n' "$2" | tr -d '\r' | grep -v -i -E 'token|password|secret|authoriz|key' | sed 's/%/%25/g' | sed 's/$/ |/' | tr '\n' ' ' | cut -c1-3000)
+            [ -n "${t// /}" ] && echo "::error::$1: $t"
+          }
+          C="$RUNNER_TEMP/vcpkg-console.txt"
+          [ -s "$C" ] || { echo "::error::console di vcpkg vuota o assente"; exit 0; }
+          nota "vcpkg riepilogo" "$(grep -E '^error:|BUILD_FAILED|failed with|See logs|CMake Error' "$C" | head -12)"
+          porta=$(grep -o -E 'building [a-z0-9_-]+:[a-z0-9-]+ failed' "$C" | head -1 | sed -E 's/building ([^:]+):.*/\1/')
+          [ -n "$porta" ] || { echo "::error::pacchetto fallito non riconosciuto nella console"; exit 0; }
+          ls -t "$VCPKG_ROOT/buildtrees/$porta/"*.log 2>/dev/null | head -6 | while read -r f; do
+            nota "vcpkg $porta $(basename "$f")" "$(tail -n 25 "$f")"
+          done
 
       - name: icon stuff
         shell: bash
@@ -295,8 +316,8 @@ jobs:
         name: Build rustdesk
         id: vcpkg
         with:
-          arch: ${{ env.arch }}
-          distro: ${{ env.distro }}
+          arch: ${{ env.ga_arch }}
+          distro: ${{ env.ga_distro }}
           githubToken: ${{ github.token }}
           setup: |
             ls -l "${PWD}"
@@ -352,13 +373,13 @@ jobs:
             git config --global --add safe.directory "*"
             # rust (niente rustup: come rdgen); l'archivio si controlla con l'impronta pubblicata accanto
             pushd /opt
-            R=rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }}.tar.gz
+            R=rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.ga_target }}.tar.gz
             wget -O rust.tar.gz https://static.rust-lang.org/dist/$R
             wget -O rust.tar.gz.sha256 https://static.rust-lang.org/dist/$R.sha256
             [ "$(sha256sum rust.tar.gz | cut -d' ' -f1)" = "$(cut -d' ' -f1 rust.tar.gz.sha256)" ] || { echo "::error::Rust con impronta diversa da quella pubblicata"; exit 1; }
             tar -zxvf rust.tar.gz > /dev/null && rm rust.tar.gz
-            cd rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }} && ./install.sh
-            rm -rf rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.target }}
+            cd rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.ga_target }} && ./install.sh
+            rm -rf rust-${{env.RUST_TOOLCHAIN_VERSION}}-${{ env.ga_target }}
             mkdir -p ~/.cargo/
             echo """
               [source.crates-io]
@@ -387,7 +408,7 @@ jobs:
             mkdir output
             chmod 777 output -R
             export CARGO_INCREMENTAL=0
-            export DEB_ARCH=${{ env.deb_arch }}
+            export DEB_ARCH=${{ env.ga_deb_arch }}
             # icona come rdgen (svg dalla png, icone di flutter_launcher_icons)
             mv ./flutter/assets/icon.svg ./flutter/assets/icon.svg.bak
             convert ./res/icon.png ./flutter/assets/icon.svg
