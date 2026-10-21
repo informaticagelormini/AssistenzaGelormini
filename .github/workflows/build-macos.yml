@@ -176,6 +176,13 @@ jobs:
           sed -i '' -e "s|pub const WS_RELAY_PORT: i32 = [0-9][0-9]*;|pub const WS_RELAY_PORT: i32 = $WS_RELAY_PORT;|" ./libs/hbb_common/src/config.rs
           sed -i '' -e "s|OeVuKk5nlHiXp+APNn0Y3pC1Iwpwn44JGqrQCsWqmBw=|$SERVER_KEY|" ./libs/hbb_common/src/config.rs
           sed -i '' -e "s|https://admin.rustdesk.com|$API_SERVER|" ./src/common.rs
+          # Mac Intel (corse 1-5, 21/10): rustc 1.81 x86_64-apple-darwin scrive "<API>".to_owned() con movabsq/movw e lascia la costante intera
+          # senza riferimenti, che il linker toglie: la verifica non la trova (riprodotto). black_box obbliga a usare la costante intera
+          # (riprodotto: 0 movabsq e 1 riferimento, contro 3 e 0 senza); stesso valore, nessun effetto sul comportamento.
+          n=$(grep -cF "\"$API_SERVER\".to_owned()" ./src/common.rs || true)
+          [ "$n" = 1 ] || { echo "::error::\"API\".to_owned() trovato $n volte in common.rs invece di 1: sorgente cambiato"; exit 1; }
+          sed -i '' -e "s|\"$API_SERVER\".to_owned()|std::hint::black_box(\"$API_SERVER\").to_owned()|" ./src/common.rs
+          grep -qF "std::hint::black_box(\"$API_SERVER\").to_owned()" ./src/common.rs || { echo "::error::black_box sull'API non scritto"; exit 1; }
           n=$(grep -c 'pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());' ./libs/hbb_common/src/config.rs)
           [ "$n" = 1 ] || { echo "::error::APP_NAME di hbb_common non trovato una sola volta ($n): sorgente cambiato"; exit 1; }
           sed -i '' -e 's|pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());|pub static ref APP_NAME: RwLock<String> = RwLock::new("${{ env.appname }}".to_owned());|' ./libs/hbb_common/src/config.rs
